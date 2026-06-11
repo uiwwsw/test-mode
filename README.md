@@ -2,6 +2,28 @@
 
 Vanilla TypeScript test-mode runtime for API mocks.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/uiwwsw/test-mode/main/docs/demo.gif" alt="Console toggles a test scenario, the real API response is reused, and selected fields are overridden under a TEST MODE overlay." width="760" />
+</p>
+
+## What It Does Best
+
+Turn API scenarios on from the browser console, keep the real API request/response, and override only the fields you need.
+
+```js
+test.list();
+test.add("/orders/:id:half-off");
+test.active();
+test.clear();
+```
+
+That is the main idea:
+
+- `test.add(...)`, `test.list()`, `test.active()`, and `test.clear()` work directly from the browser console.
+- Patch scenarios can let the real API request happen and reuse the real response payload.
+- Mock data stays easy because a scenario can override only a few fields on top of the real response.
+- Active scenarios are stored in browser state and cookies, so server/API proxy code can also read them.
+
 No React, no Vue, no Next.js, no Redux, no axios dependency. The package exports one small runtime that can:
 
 - register mock and patch scenarios
