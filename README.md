@@ -2,7 +2,7 @@
 
 Vanilla TypeScript test-mode runtime for API mocks.
 
-No React, no Next.js, no Redux, no axios dependency. The package exports one small runtime that can:
+No React, no Vue, no Next.js, no Redux, no axios dependency. The package exports one small runtime that can:
 
 - register mock and patch scenarios
 - register app-specific extensions
@@ -11,36 +11,24 @@ No React, no Next.js, no Redux, no axios dependency. The package exports one sma
 - patch global `fetch`
 - run directly inside server/API proxy code
 
-## Why Not axios?
+## Framework Strategy
 
-`fetch` can be patched globally. axios cannot be reliably covered by a simple global `fetch` patch because axios may use XHR in the browser or Node HTTP adapters on the server.
+This package does **not** ship React or Vue wrappers by default.
 
-So this package stays HTTP-client neutral:
+Why:
 
-- If your app uses `fetch`, call `installMockFetch(testMode)`.
-- If your app uses axios, call `testMode.resolve()` / `testMode.patch()` from your existing axios interceptor or API client.
-- If your app has a server proxy, call `testMode.resolve()` / `testMode.patch()` there. This is the most complete path because every client request eventually passes through the proxy.
+- the runtime is already framework-independent
+- React/Vue wrappers would add peer dependency and maintenance surface
+- app bootstrap is usually the right place to install global test mode behavior
+- most apps need the same 3 calls: create runtime, install overlay, install fetch patch
 
-## Extension Decision
+So the package provides framework-neutral APIs, and the README shows how to use them in React, Vue, and vanilla JavaScript.
 
-Browser-level API mocking cannot cover everything. PASS identity verification, iframe/popup flows, postMessage handshakes, SDK calls, or route-specific rewrites are app behavior, not universal API mocking.
+If the same wrapper code becomes repetitive across real projects, create optional packages later:
 
-So this package does not ship built-in PASS or Next plugins. Instead, it exposes a tiny extension hook:
-
-- core package stays small and framework-neutral
-- app-specific behavior lives in the consuming app
-- extension state still appears in `test.active()` / `test.list()`
-- extension state still turns on the `TEST MODE` overlay
-
-Use this rule:
-
-| Need | Use |
-| --- | --- |
-| Replace an API response | `defineMock` |
-| Modify a real API response | `definePatch` |
-| Cover every API regardless of browser client | server proxy with `resolve` / `patch` |
-| Mock popup, iframe, SDK, `window.open`, `postMessage` | extension |
-| Normalize a weird browser request path before matching | `mapRequest` |
+- `@uiwwsw/test-mode-react`
+- `@uiwwsw/test-mode-vue`
+- `@uiwwsw/test-mode-next`
 
 ## Install
 
@@ -57,7 +45,7 @@ pnpm add @uiwwsw/test-mode
 Before publishing, test it locally with the tarball created by `pnpm pack`:
 
 ```bash
-npm install ../test-mode/uiwwsw-test-mode-0.1.0.tgz
+npm install ../test-mode2/uiwwsw-test-mode-0.1.0.tgz
 ```
 
 ## Quick Start
@@ -108,9 +96,174 @@ test.list();
 test.clear();
 ```
 
+## React Usage
+
+Install test mode once in a client-only bootstrap module.
+
+```ts
+// src/test-mode.ts
+import {
+  createTestMode,
+  defineMock,
+  installMockFetch,
+  installTestModeOverlay,
+} from "@uiwwsw/test-mode";
+
+export const testMode = createTestMode({
+  enabled: () => import.meta.env.DEV,
+  definitions: [
+    defineMock("/api/example", () => ({
+      ok: true,
+      source: "mock",
+    })),
+  ],
+});
+
+export const installAppTestMode = () => {
+  const uninstallOverlay = installTestModeOverlay(testMode);
+  const uninstallFetch = installMockFetch(testMode);
+
+  return () => {
+    uninstallFetch();
+    uninstallOverlay();
+  };
+};
+```
+
+React entry:
+
+```tsx
+// src/main.tsx
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import { installAppTestMode } from "./test-mode";
+
+if (import.meta.env.DEV) {
+  installAppTestMode();
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+```
+
+Next.js App Router:
+
+```tsx
+"use client";
+
+import { useEffect } from "react";
+import { installAppTestMode } from "../test-mode";
+
+export function TestModeClient() {
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") {
+      return;
+    }
+
+    return installAppTestMode();
+  }, []);
+
+  return null;
+}
+```
+
+Then render `<TestModeClient />` from a client boundary such as a provider component.
+
+## Vue Usage
+
+Install test mode before mounting the app.
+
+```ts
+// src/test-mode.ts
+import {
+  createTestMode,
+  defineMock,
+  installMockFetch,
+  installTestModeOverlay,
+} from "@uiwwsw/test-mode";
+
+export const testMode = createTestMode({
+  enabled: () => import.meta.env.DEV,
+  definitions: [
+    defineMock("/api/example", () => ({
+      ok: true,
+      source: "mock",
+    })),
+  ],
+});
+
+export const installAppTestMode = () => {
+  const uninstallOverlay = installTestModeOverlay(testMode);
+  const uninstallFetch = installMockFetch(testMode);
+
+  return () => {
+    uninstallFetch();
+    uninstallOverlay();
+  };
+};
+```
+
+Vue entry:
+
+```ts
+// src/main.ts
+import { createApp } from "vue";
+import App from "./App.vue";
+import { installAppTestMode } from "./test-mode";
+
+if (import.meta.env.DEV) {
+  installAppTestMode();
+}
+
+createApp(App).mount("#app");
+```
+
+Vue plugin shape if you prefer plugin installation:
+
+```ts
+import type { App } from "vue";
+import { installAppTestMode } from "./test-mode";
+
+export const testModePlugin = {
+  install(_app: App) {
+    if (import.meta.env.DEV) {
+      installAppTestMode();
+    }
+  },
+};
+```
+
+## Mock vs Patch
+
+Mock replaces the response before the real request goes out.
+
+```ts
+defineMock("/orders/cart/getCartInfo", () => ({
+  code: "200",
+  data: { items: [] },
+  message: "OK",
+  status: 200,
+}));
+```
+
+Patch lets the real request happen, then modifies the response.
+
+```ts
+import { definePatch } from "@uiwwsw/test-mode";
+
+definePatch("/menus/:menuCode", (response) => ({
+  ...(response as object),
+  patchedByTestMode: true,
+}));
+```
+
 ## App-Specific Extension Example
 
-Example: PASS-like identity verification that opens a popup/iframe and returns data through `postMessage`.
+Use extensions for behavior that is not a normal API response: popup, iframe, SDK, `window.open`, `postMessage`, or browser-only integrations.
 
 ```ts
 import {
@@ -192,29 +345,15 @@ test.active(); // includes "본인인증"
 test.remove("본인인증");
 ```
 
-## Mock vs Patch
+## Why Not axios?
 
-Mock replaces the response before the real request goes out.
+`fetch` can be patched globally. axios cannot be reliably covered by a simple global `fetch` patch because axios may use XHR in the browser or Node HTTP adapters on the server.
 
-```ts
-defineMock("/orders/cart/getCartInfo", () => ({
-  code: "200",
-  data: { items: [] },
-  message: "OK",
-  status: 200,
-}));
-```
+So this package stays HTTP-client neutral:
 
-Patch lets the real request happen, then modifies the response.
-
-```ts
-import { definePatch } from "@uiwwsw/test-mode";
-
-definePatch("/menus/:menuCode", (response) => ({
-  ...(response as object),
-  patchedByTestMode: true,
-}));
-```
+- If your app uses `fetch`, call `installMockFetch(testMode)`.
+- If your app uses axios, call `testMode.resolve()` / `testMode.patch()` from your existing axios interceptor or API client.
+- If your app has a server proxy, call `testMode.resolve()` / `testMode.patch()` there. This is the most complete path because every client request eventually passes through the proxy.
 
 ## Server Proxy Usage
 
@@ -281,15 +420,6 @@ installMockFetch(testMode, {
 ```
 
 This changes only how test mode matches the request. Real transport rewrites should stay in the app's API client or proxy.
-
-## Build
-
-```bash
-pnpm install
-pnpm run typecheck
-pnpm run build
-pnpm pack --dry-run
-```
 
 ## CI and Publish
 
