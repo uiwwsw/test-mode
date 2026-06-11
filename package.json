@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "CHANGELOG.md",
+    "LICENSE",
     "README.md"
   ],
   "exports": {
@@ -22,6 +23,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "ci": "pnpm run typecheck && pnpm run build && pnpm pack --dry-run",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "prepack": "pnpm run clean && pnpm run build",
     "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run build",
@@ -39,6 +41,14 @@
   "engines": {
     "node": ">=18.17"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uiwwsw/test-mode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/uiwwsw/test-mode/issues"
+  },
+  "homepage": "https://github.com/uiwwsw/test-mode#readme",
   "publishConfig": {
     "access": "public"
   },

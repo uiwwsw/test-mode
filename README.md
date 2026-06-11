@@ -290,3 +290,35 @@ pnpm run typecheck
 pnpm run build
 pnpm pack --dry-run
 ```
+
+## CI and Publish
+
+CI runs on every push to `main` and every pull request:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run ci
+```
+
+Publishing runs from GitHub Actions when either:
+
+- a GitHub Release is published
+- the `Publish` workflow is manually dispatched
+
+Before publishing, add this repository secret in GitHub:
+
+```text
+NPM_TOKEN=<npm automation token>
+```
+
+The publish workflow runs:
+
+```bash
+pnpm publish --access public --provenance --no-git-checks
+```
+
+The package is published as:
+
+```text
+@uiwwsw/test-mode
+```
