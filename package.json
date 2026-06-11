@@ -1,0 +1,48 @@
+{
+  "name": "@uiwwsw/test-mode",
+  "version": "0.1.0",
+  "description": "Vanilla TypeScript API test mode runtime with browser overlay and fetch patching.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "license": "MIT",
+  "author": "uiwwsw",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "pnpm run clean && pnpm run build",
+    "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run build",
+    "pack:dry-run": "pnpm pack --dry-run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "api",
+    "mock",
+    "test-mode",
+    "fetch",
+    "overlay",
+    "vanilla"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
