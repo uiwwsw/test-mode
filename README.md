@@ -1,60 +1,41 @@
 # @uiwwsw/test-mode
 
-Vanilla TypeScript test-mode runtime for API mocks.
+Framework-neutral TypeScript runtime for API test mode, story-based scenarios, browser console control, overlays, and `fetch` mocking.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/uiwwsw/test-mode/main/docs/demo.gif" alt="Console toggles a test scenario, the real API response is reused, and selected fields are overridden under a TEST MODE overlay." width="760" />
 </p>
 
-## What It Does Best
+## Why
 
-Turn API scenarios on from the browser console, keep the real API request/response, and override only the fields you need.
+Most frontend teams need two kinds of test-mode controls:
+
+- **Story tests**: shared, user-visible states such as `cart.load.server-error` or `auth.login.locked`.
+- **General tests**: low-level API mock/patch entries such as `/api/session/signin:locked`.
+
+`@uiwwsw/test-mode` supports both. Use stories when sharing QA/product/design scenarios. Use low-level entries when debugging API behavior.
 
 ```js
-test.list();
-test.add("/orders/:id:half-off");
+test(); // command help
+test.story.list("/cart");
+test.story("cart.load.server-error");
 test.active();
 test.clear();
 ```
 
-That is the main idea:
+## Features
 
-- `test.add(...)`, `test.list()`, `test.active()`, and `test.clear()` work directly from the browser console.
-- Patch scenarios can let the real API request happen and reuse the real response payload.
-- Mock data stays easy because a scenario can override only a few fields on top of the real response.
-- Active scenarios are stored in browser state and cookies, so server/API proxy code can also read them.
-
-No React, no Vue, no Next.js, no Redux, no axios dependency. The package exports one small runtime that can:
-
-- register mock and patch scenarios
-- register app-specific extensions
-- turn scenarios on/off from the browser console
-- show a `TEST MODE` overlay with vanilla DOM
-- patch global `fetch`
-- run directly inside server/API proxy code
-
-## Framework Strategy
-
-This package does **not** ship React or Vue wrappers by default.
-
-Why:
-
-- the runtime is already framework-independent
-- React/Vue wrappers would add peer dependency and maintenance surface
-- app bootstrap is usually the right place to install global test mode behavior
-- most apps need the same 3 calls: create runtime, install overlay, install fetch patch
-
-So the package provides framework-neutral APIs, and the README shows how to use them in React, Vue, and vanilla JavaScript.
-
-If the same wrapper code becomes repetitive across real projects, create optional packages later:
-
-- `@uiwwsw/test-mode-react`
-- `@uiwwsw/test-mode-vue`
-- `@uiwwsw/test-mode-next`
+- Story catalog with `defineStory`, `entry`, `test.story.list/add/remove/set/toggle()`, and `test.story()`
+- Feature-level mock and patch entries with `defineMock`, `definePatch`, `test.feat.add()`, and `test.feat.list()`
+- Search across feature and story catalogs with `test.search()`
+- Page-aware vanilla DOM `TEST MODE` overlay
+- Global `fetch` patching
+- Server/proxy integration hooks for requests that cannot use browser `fetch`
+- Browser storage and cookie handoff for SSR/server requests
+- App-specific extensions for popups, SDKs, iframes, `window.open`, or `postMessage`
+- No React, Vue, Next.js, Redux, axios, or test-runner dependency
 
 ## Install
-
-After publishing:
 
 ```bash
 npm install @uiwwsw/test-mode
@@ -64,11 +45,60 @@ npm install @uiwwsw/test-mode
 pnpm add @uiwwsw/test-mode
 ```
 
-Before publishing, test it locally with the tarball created by `pnpm pack`:
+Local tarball install before publishing:
 
 ```bash
 npm install ../test-mode2/uiwwsw-test-mode-0.1.0.tgz
 ```
+
+## Create Your Test Mode Folder
+
+After installing the package, create one app-owned folder for test mode definitions.
+
+Recommended location:
+
+```txt
+src/test-mode/
+```
+
+The package ships a starter template:
+
+```txt
+node_modules/@uiwwsw/test-mode/templates/test-mode/
+```
+
+Copy it into your app:
+
+```bash
+cp -R node_modules/@uiwwsw/test-mode/templates/test-mode src/test-mode
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item -Recurse node_modules/@uiwwsw/test-mode/templates/test-mode src/test-mode
+```
+
+Template structure:
+
+```txt
+src/test-mode/
+  config.ts
+  index.ts
+  install.ts
+  features/
+    auth.ts
+  stories/
+    auth.stories.ts
+```
+
+- `config.ts`: app-specific storage keys, cookie key, event name, overlay labels.
+- `features/*`: one API behavior at a time with `defineMock` or `definePatch`.
+- `stories/*`: combinations of feature entries with `defineStory`.
+- `index.ts`: creates the app runtime from features and stories.
+- `install.ts`: installs `test`, overlay, and fetch patching.
+
+Then call `installAppTestMode()` once from your client bootstrap.
 
 ## Quick Start
 
@@ -76,12 +106,14 @@ npm install ../test-mode2/uiwwsw-test-mode-0.1.0.tgz
 import {
   createTestMode,
   defineMock,
+  defineStory,
+  entry,
   httpResult,
   installMockFetch,
   installTestModeOverlay,
 } from "@uiwwsw/test-mode";
 
-const testMode = createTestMode({
+const runtime = createTestMode({
   enabled: () => import.meta.env.DEV,
   definitions: [
     defineMock(
@@ -100,25 +132,286 @@ const testMode = createTestMode({
       {
         caseKey: "locked",
         description: "Login locked account branch",
+        pages: ["/login"],
       },
     ),
   ],
+  stories: [
+    defineStory({
+      key: "auth.login.locked",
+      title: "Login - locked account",
+      description: "Shows the locked password branch on the login screen.",
+      entries: [entry("/api/session/signin", "locked")],
+    }),
+  ],
 });
 
-installTestModeOverlay(testMode);
-installMockFetch(testMode);
+installTestModeOverlay(runtime);
+installMockFetch(runtime);
 ```
 
 Browser console:
 
 ```js
-test.add("/api/session/signin:locked");
+test(); // command help
+test.story.list("/login");
+test.story("auth.login.locked");
 test.active();
-test.list();
 test.clear();
 ```
 
-## React Usage
+## Console API
+
+The template installs the browser console API for you. After installation, use `test` in the browser console.
+
+```js
+test(); // help
+test.help(); // same help object
+test.search(); // every registered feature and story entry
+test.search("cart"); // search feature and story catalogs together
+
+test.story.list(); // story catalog
+test.story.list("/cart"); // stories for one page
+test.story.list({ page: "/cart", query: "error" });
+test.story.add("main.event-popup"); // add one story
+test.story.remove("main.event-popup"); // remove one story's entries
+test.story.set(["cart.load.server-error"]); // replace active entries with stories
+test.story.toggle("cart.load.server-error"); // toggle one story
+test.story("cart.load.server-error"); // shorthand for test.story.set("cart.load.server-error")
+
+test.feat.list(); // feature-level mock/patch API catalog
+test.feat.add("/api/session/signin:locked");
+test.feat.remove("/api/session/signin:locked");
+test.feat.toggle("/api/session/signin:locked");
+test.feat.set(["/api/session/signin:locked"]);
+
+test.active();
+test.clear();
+```
+
+`test.story.list()` and `test.feat.list()` only show entries registered by your app through `src/test-mode/stories/*` and `src/test-mode/features/*`. `test.search()` is the global view across both catalogs; call it with no input to list everything, or pass a string/options object to filter.
+
+`test("some.key")` is story-aware:
+
+- if `some.key` is a story key, it applies that story
+- otherwise it toggles a feature-level mock/patch/extension entry
+
+## Story-Based Scenarios
+
+Stories are the recommended sharing layer. They group one or more mock/patch entries into a screen state.
+
+```ts
+import {
+  createTestMode,
+  defineMock,
+  definePatch,
+  defineStory,
+  entry,
+} from "@uiwwsw/test-mode";
+
+const runtime = createTestMode({
+  definitions: [
+    defineMock(
+      "/orders/cart/getCartInfo",
+      () => ({
+        code: "200",
+        data: { items: [{ name: "Pepperoni Pizza" }] },
+        message: "OK",
+        status: 200,
+      }),
+      { pages: ["/cart"] },
+    ),
+    defineMock(
+      "/orders/cart/getCartInfo",
+      () => ({
+        code: "502",
+        data: null,
+        message: "Temporary cart failure",
+        status: 502,
+      }),
+      {
+        caseKey: "server-error",
+        description: "Cart load server error",
+        pages: ["/cart"],
+      },
+    ),
+  ],
+  patchDefinitions: [
+    definePatch("/promotions/event/getPrmtEventList", (response) => ({
+      ...(response as object),
+      testPopup: true,
+    }), { pages: ["/"] }),
+  ],
+  stories: [
+    defineStory({
+      key: "cart.full",
+      title: "Cart - full",
+      description: "Shows a cart with menu data loaded.",
+      entries: [entry("/orders/cart/getCartInfo")],
+    }),
+    defineStory({
+      key: "cart.load.server-error",
+      title: "Cart - server error",
+      description: "Shows the cart load failure state.",
+      entries: [entry("/orders/cart/getCartInfo", "server-error")],
+    }),
+    defineStory({
+      key: "main.event-popup",
+      title: "Main - event popup",
+      description: "Patches the event popup response on the main screen.",
+      entries: [entry("/promotions/event/getPrmtEventList")],
+    }),
+  ],
+});
+```
+
+Story rules:
+
+- `key`, `title`, `description`, and `entries` are required.
+- `pages` are inherited from referenced feature entries and merged with explicit story pages.
+- Story keys must be unique.
+- Story entries must point to registered mock or patch entries.
+- Stories do not require tags. Search by `page`, `key`, `title`, and `description` first.
+
+More detail: [Story-Based Test Mode Design](./docs/story-test-design.md).
+
+## Recommended App Structure
+
+Keep feature entries and stories in separate folders. A feature owns one API behavior. A story combines features into a screen state.
+
+```txt
+src/test-mode/
+  index.ts
+  features/
+    auth.ts
+    cart.ts
+    promotions.ts
+  stories/
+    auth.stories.ts
+    cart.stories.ts
+```
+
+Feature file:
+
+```ts
+// src/test-mode/features/auth.ts
+import { defineMock, httpResult } from "@uiwwsw/test-mode";
+
+export const authFeatures = [
+  defineMock(
+    "/api/session/signin",
+    () =>
+      httpResult({
+        data: {
+          code: "AU-105",
+          data: null,
+          message: "Password is locked",
+          status: 400,
+        },
+        status: 200,
+        statusText: "OK",
+      }),
+      {
+        caseKey: "locked",
+        description: "Login locked account branch",
+        pages: ["/login"],
+      },
+    ),
+];
+```
+
+Story file:
+
+```ts
+// src/test-mode/stories/auth.stories.ts
+import { defineStory, entry } from "@uiwwsw/test-mode";
+
+export const authStories = [
+  defineStory({
+    key: "auth.login.locked",
+    title: "Login - locked account",
+    description: "Shows the locked password branch on the login screen.",
+    entries: [entry("/api/session/signin", "locked")],
+  }),
+];
+```
+
+Runtime file:
+
+```ts
+// src/test-mode/index.ts
+import { createTestMode } from "@uiwwsw/test-mode";
+import { authFeatures } from "./features/auth";
+import { authStories } from "./stories/auth.stories";
+
+export const runtime = createTestMode({
+  enabled: () => import.meta.env.DEV,
+  definitions: [...authFeatures],
+  stories: [...authStories],
+});
+```
+
+## Mock vs Patch
+
+Mock replaces the response before the real request goes out.
+
+```ts
+import { defineMock, httpResult } from "@uiwwsw/test-mode";
+
+defineMock("/orders/cart/getCartInfo", () =>
+  httpResult({
+    data: {
+      code: "200",
+      data: { items: [] },
+      message: "OK",
+      status: 200,
+    },
+    status: 200,
+    statusText: "OK",
+  }),
+);
+```
+
+Patch lets the real request happen, then modifies the response.
+
+```ts
+import { definePatch } from "@uiwwsw/test-mode";
+
+definePatch("/menus/:menuCode", (response) => ({
+  ...(response as object),
+  patchedByTest: true,
+}));
+```
+
+Use `passThrough()` from a mock handler when a mock should conditionally let the real request continue.
+
+```ts
+import { defineMock, passThrough } from "@uiwwsw/test-mode";
+
+defineMock("/api/search", ({ params }) => {
+  if ((params as { q?: string }).q !== "test") {
+    return passThrough();
+  }
+
+  return { results: [] };
+});
+```
+
+## Bootstrap Patterns
+
+### Vanilla or Vite
+
+```ts
+import { installMockFetch, installTestModeOverlay } from "@uiwwsw/test-mode";
+import { runtime } from "./test-mode";
+
+if (import.meta.env.DEV) {
+  installTestModeOverlay(runtime);
+  installMockFetch(runtime);
+}
+```
+
+### React
 
 Install test mode once in a client-only bootstrap module.
 
@@ -131,7 +424,7 @@ import {
   installTestModeOverlay,
 } from "@uiwwsw/test-mode";
 
-export const testMode = createTestMode({
+export const runtime = createTestMode({
   enabled: () => import.meta.env.DEV,
   definitions: [
     defineMock("/api/example", () => ({
@@ -142,8 +435,8 @@ export const testMode = createTestMode({
 });
 
 export const installAppTestMode = () => {
-  const uninstallOverlay = installTestModeOverlay(testMode);
-  const uninstallFetch = installMockFetch(testMode);
+  const uninstallOverlay = installTestModeOverlay(runtime);
+  const uninstallFetch = installMockFetch(runtime);
 
   return () => {
     uninstallFetch();
@@ -151,8 +444,6 @@ export const installAppTestMode = () => {
   };
 };
 ```
-
-React entry:
 
 ```tsx
 // src/main.tsx
@@ -172,7 +463,7 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-Next.js App Router:
+### Next.js App Router
 
 ```tsx
 "use client";
@@ -193,43 +484,9 @@ export function TestModeClient() {
 }
 ```
 
-Then render `<TestModeClient />` from a client boundary such as a provider component.
+Render `<TestModeClient />` from a client boundary such as a provider component.
 
-## Vue Usage
-
-Install test mode before mounting the app.
-
-```ts
-// src/test-mode.ts
-import {
-  createTestMode,
-  defineMock,
-  installMockFetch,
-  installTestModeOverlay,
-} from "@uiwwsw/test-mode";
-
-export const testMode = createTestMode({
-  enabled: () => import.meta.env.DEV,
-  definitions: [
-    defineMock("/api/example", () => ({
-      ok: true,
-      source: "mock",
-    })),
-  ],
-});
-
-export const installAppTestMode = () => {
-  const uninstallOverlay = installTestModeOverlay(testMode);
-  const uninstallFetch = installMockFetch(testMode);
-
-  return () => {
-    uninstallFetch();
-    uninstallOverlay();
-  };
-};
-```
-
-Vue entry:
+### Vue
 
 ```ts
 // src/main.ts
@@ -244,46 +501,90 @@ if (import.meta.env.DEV) {
 createApp(App).mount("#app");
 ```
 
-Vue plugin shape if you prefer plugin installation:
+## Advanced: Server or Proxy Integration
+
+Most apps should use the browser `test` API. Use this advanced hook only when requests do not go through browser `fetch`, or when your server/proxy must participate in test mode.
 
 ```ts
-import type { App } from "vue";
-import { installAppTestMode } from "./test-mode";
+const mock = await runtime.resolve({
+  body,
+  cookieHeader: request.headers.get("cookie"),
+  headers: request.headers,
+  method: request.method,
+  params,
+  path: normalizedPath,
+  url: upstreamUrl,
+});
 
-export const testModePlugin = {
-  install(_app: App) {
-    if (import.meta.env.DEV) {
-      installAppTestMode();
-    }
+if (mock) {
+  return Response.json(mock.data, {
+    headers: mock.headers,
+    status: mock.status,
+    statusText: mock.statusText,
+  });
+}
+
+const upstream = await fetch(upstreamUrl, init);
+const payload = await upstream.clone().json().catch(() => null);
+const patched = await runtime.patch({
+  body,
+  cookieHeader: request.headers.get("cookie"),
+  data: payload,
+  headers: request.headers,
+  method: request.method,
+  params,
+  path: normalizedPath,
+  url: upstreamUrl,
+});
+
+if (patched !== null) {
+  return Response.json(patched, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+  });
+}
+
+return upstream;
+```
+
+## Request Matching
+
+Static paths, route params, wildcards, regular expressions, and custom matchers are supported.
+
+```ts
+defineMock("/orders/:orderId", () => ({ ok: true }));
+defineMock("/orders/*", () => ({ ok: true }));
+defineMock(/\/orders\/\d+/, () => ({ ok: true }));
+defineMock(
+  "/orders",
+  () => ({ ok: true }),
+  {
+    match: ({ method, path }) => method === "POST" && path === "/orders",
+    method: "POST",
   },
-};
+);
 ```
 
-## Mock vs Patch
-
-Mock replaces the response before the real request goes out.
+If the browser request path needs to be normalized before matching, use `mapRequest`.
 
 ```ts
-defineMock("/orders/cart/getCartInfo", () => ({
-  code: "200",
-  data: { items: [] },
-  message: "OK",
-  status: 200,
-}));
+installMockFetch(runtime, {
+  mapRequest(request) {
+    if (request.path.startsWith("/next/api/")) {
+      return {
+        ...request,
+        path: request.path.replace(/^\/next\/api/, "/api"),
+      };
+    }
+
+    return request;
+  },
+});
 ```
 
-Patch lets the real request happen, then modifies the response.
+This changes only how test mode matches the request. Real transport rewrites should stay in the app's API client or proxy.
 
-```ts
-import { definePatch } from "@uiwwsw/test-mode";
-
-definePatch("/menus/:menuCode", (response) => ({
-  ...(response as object),
-  patchedByTestMode: true,
-}));
-```
-
-## App-Specific Extension Example
+## App-Specific Extensions
 
 Use extensions for behavior that is not a normal API response: popup, iframe, SDK, `window.open`, `postMessage`, or browser-only integrations.
 
@@ -311,29 +612,12 @@ const passAuthExtension = createToggleExtension({
         return originalOpen?.(url, target, features) ?? null;
       }
 
-      const popup = {
-        closed: false,
-        close() {
-          popup.closed = true;
-        },
-        focus() {},
-      } as Window;
-
       window.setTimeout(() => {
-        if (popup.closed) return;
-
         window.dispatchEvent(
           new MessageEvent("message", {
             data: {
               code: "AU-000",
-              data: {
-                birth: "19900101",
-                ci: "TEST_CI_19900101",
-                comId: "PASS",
-                gender: "M",
-                name: "테스트",
-                phone: "01012345678",
-              },
+              data: { name: "테스트", phone: "01012345678" },
               message: "OK",
             },
             origin: parsedUrl.origin,
@@ -341,7 +625,7 @@ const passAuthExtension = createToggleExtension({
         );
       }, 0);
 
-      return popup;
+      return { closed: false, close() {}, focus() {} } as Window;
     };
   },
   onDisable() {
@@ -352,9 +636,9 @@ const passAuthExtension = createToggleExtension({
   },
 });
 
-const testMode = createTestMode({ enabled: () => import.meta.env.DEV });
+const runtime = createTestMode({ enabled: () => import.meta.env.DEV });
 
-installTestModeOverlay(testMode, {
+installTestModeOverlay(runtime, {
   extensions: [passAuthExtension],
 });
 ```
@@ -362,90 +646,59 @@ installTestModeOverlay(testMode, {
 Console:
 
 ```js
-test.add("본인인증");
+test.feat.add("본인인증");
 test.active(); // includes "본인인증"
-test.remove("본인인증");
+test.feat.remove("본인인증");
 ```
+
+## Public Usage Surface
+
+Browser console:
+
+- `test()`
+- `test.search(input?)`
+- `test.feat.list()`
+- `test.feat.add(path)`
+- `test.feat.remove(path)`
+- `test.feat.set(paths)`
+- `test.feat.toggle(path)`
+- `test.story.list(input?)`
+- `test.story.add(storyKey)`
+- `test.story.remove(storyKey)`
+- `test.story.set(storyKeys)`
+- `test.story.toggle(storyKey)`
+- `test.story(storyKey)`
+- `test.active()`
+- `test.clear()`
+
+Setup helpers used by the app template:
+
+- `createTestMode(options)`
+- `defineMock(path, handler, options?)`
+- `definePatch(path, handler, options?)`
+- `defineStory(story)`
+- `entry(path, caseKey?)`
+- `httpResult(result)`
+- `passThrough()`
+- `installConsole(...)`
+- `installTestModeOverlay(...)`
+- `installMockFetch(...)`
+- `createMockFetch(...)`
+- `createToggleExtension(options)`
+
+Do not teach application users to call runtime methods directly. The browser-facing control surface is `test`.
 
 ## Why Not axios?
 
 `fetch` can be patched globally. axios cannot be reliably covered by a simple global `fetch` patch because axios may use XHR in the browser or Node HTTP adapters on the server.
 
-So this package stays HTTP-client neutral:
+This package stays HTTP-client neutral:
 
-- If your app uses `fetch`, call `installMockFetch(testMode)`.
-- If your app uses axios, call `testMode.resolve()` / `testMode.patch()` from your existing axios interceptor or API client.
-- If your app has a server proxy, call `testMode.resolve()` / `testMode.patch()` there. This is the most complete path because every client request eventually passes through the proxy.
-
-## Server Proxy Usage
-
-Use this when you want to cover every API, including requests that never go through browser `fetch`.
-
-```ts
-const mock = await testMode.resolve({
-  body,
-  cookieHeader: request.headers.get("cookie"),
-  headers: request.headers,
-  method: request.method,
-  params,
-  path: normalizedPath,
-  url: upstreamUrl,
-});
-
-if (mock) {
-  return Response.json(mock.data, {
-    status: mock.status,
-    statusText: mock.statusText,
-  });
-}
-
-const upstream = await fetch(upstreamUrl, init);
-const payload = await upstream.clone().json().catch(() => null);
-const patched = await testMode.patch({
-  body,
-  cookieHeader: request.headers.get("cookie"),
-  data: payload,
-  headers: request.headers,
-  method: request.method,
-  params,
-  path: normalizedPath,
-  url: upstreamUrl,
-});
-
-if (patched !== null) {
-  return Response.json(patched, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-  });
-}
-
-return upstream;
-```
-
-## Request Path Normalization
-
-If the browser request path needs to be normalized before matching, use `mapRequest`.
-
-```ts
-installMockFetch(testMode, {
-  mapRequest(request) {
-    if (request.path.startsWith("/next/api/")) {
-      return {
-        ...request,
-        path: request.path.replace(/^\/next\/api/, "/api"),
-      };
-    }
-
-    return request;
-  },
-});
-```
-
-This changes only how test mode matches the request. Real transport rewrites should stay in the app's API client or proxy.
+- If your app uses `fetch`, use the template installer.
+- If your app uses axios, wire the runtime into your existing axios interceptor or API client.
+- If your app has a server proxy, wire the runtime there.
 
 ## CI and Publish
-
-CI runs on every push to `main` and every pull request:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -457,20 +710,17 @@ Publishing runs from GitHub Actions when either:
 - a GitHub Release is published
 - the `Publish` workflow is manually dispatched
 
-Before publishing, add this repository secret in GitHub:
+Required repository secret:
 
 ```text
 NPM_TOKEN=<npm automation token>
 ```
 
-The publish workflow runs:
+Publish command:
 
 ```bash
 pnpm publish --access public --provenance --no-git-checks
 ```
 
-The package is published as:
 
-```text
-@uiwwsw/test-mode
-```
+

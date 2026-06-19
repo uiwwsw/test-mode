@@ -61,6 +61,7 @@ export type MockDefinition<TRequest = unknown, TResponse = unknown> = Readonly<{
   handler: MockHandler<TRequest, TResponse>;
   match?: RouteMatcher;
   method?: readonly string[] | string;
+  pages?: readonly string[];
   path: string;
 }>;
 
@@ -70,6 +71,7 @@ export type PatchDefinition<TRequest = unknown, TResponse = unknown> = Readonly<
   handler: PatchHandler<TRequest, TResponse>;
   match?: RouteMatcher;
   method?: readonly string[] | string;
+  pages?: readonly string[];
   path: string;
 }>;
 
@@ -88,13 +90,53 @@ export type TestModePatchRequest = TestModeRequest &
     data: unknown;
   }>;
 
-export type CatalogItem = Readonly<{
+export type FeatureCatalogItem = Readonly<{
   active: boolean;
   caseKey?: string;
   description: string;
   key: string;
   mode: "extension" | "mock" | "patch";
+  pages: readonly string[];
   path: string;
+}>;
+
+export type CatalogItem = FeatureCatalogItem;
+
+export type StoryDefinition = Readonly<{
+  description: string;
+  entries: readonly string[];
+  key: string;
+  pages: readonly string[];
+  title: string;
+}>;
+
+export type StoryListOptions = Readonly<{
+  active?: boolean;
+  page?: string;
+  query?: string;
+  storyKey?: string;
+}>;
+
+export type StoryListInput = StoryListOptions | string;
+
+export type StoryCatalogItem = StoryDefinition &
+  Readonly<{
+    active: boolean;
+    activeEntries: readonly string[];
+    unavailableEntries: readonly string[];
+  }>;
+
+export type TestModeSearchOptions = Readonly<{
+  active?: boolean;
+  page?: string;
+  query?: string;
+}>;
+
+export type TestModeSearchInput = TestModeSearchOptions | string;
+
+export type TestModeSearchResult = Readonly<{
+  features: readonly FeatureCatalogItem[];
+  stories: readonly StoryCatalogItem[];
 }>;
 
 export type TestModeExtensionContext = Readonly<{
@@ -131,6 +173,7 @@ export type TestModeOptions = Readonly<{
   eventName?: string;
   logger?: false | TestModeLogger;
   patchDefinitions?: readonly PatchDefinition[];
+  stories?: readonly StoryDefinition[];
   storageKey?: string;
 }>;
 
@@ -159,6 +202,12 @@ export type TestModeConsoleOptions = Readonly<{
   namespace?: string;
 }>;
 
+export type TestModeConsoleHelp = Readonly<{
+  commands: Readonly<Record<string, string>>;
+  examples: readonly string[];
+  summary: string;
+}>;
+
 type RuntimeDefinition = Readonly<{
   caseKey?: string;
   description?: string;
@@ -167,6 +216,7 @@ type RuntimeDefinition = Readonly<{
   match?: RouteMatcher;
   method?: readonly string[];
   mode: "mock" | "patch";
+  pages: readonly string[];
   path: string;
 }>;
 
@@ -233,6 +283,8 @@ const serializeEntry = (path: string, caseKey?: string) => {
 
   return caseKey ? `${normalizedPath}:${encodeURIComponent(caseKey)}` : normalizedPath;
 };
+
+export const entry = serializeEntry;
 
 const parseEntry = (value: string): ActiveEntry | null => {
   const normalizedValue = normalizePath(value);
@@ -417,6 +469,24 @@ export const definePatch = <TRequest = unknown, TResponse = unknown>(
   path: normalizePath(path),
 });
 
+export const defineStory = (
+  story: Readonly<{
+    description: string;
+    entries: readonly string[];
+    key: string;
+    pages?: readonly string[];
+    title: string;
+  }>,
+): StoryDefinition => ({
+  description: story.description,
+  entries: story.entries
+    .map((item) => parseEntry(item)?.serialized ?? "")
+    .filter(Boolean),
+  key: story.key,
+  pages: story.pages?.map(normalizePath).filter(Boolean) ?? [],
+  title: story.title,
+});
+
 const readExtensionStorage = (storageKey: string) => {
   if (typeof window === "undefined") {
     return false;
@@ -538,11 +608,13 @@ const normalizeDefinition = (
     match?: RouteMatcher;
     method?: readonly string[];
     mode: "mock" | "patch";
+    pages: readonly string[];
     path: string;
   } = {
     handler: definition.handler,
     key: serializeEntry(definition.path, definition.caseKey),
     mode,
+    pages: definition.pages?.map(normalizePath).filter(Boolean) ?? [],
     path: normalizePath(definition.path),
   };
 
@@ -565,6 +637,66 @@ const normalizeDefinition = (
   return normalized;
 };
 
+const normalizeStoryQuery = (query: string | undefined) =>
+  query?.trim().toLocaleLowerCase() ?? "";
+
+const normalizeStoryListOptions = (
+  input: StoryListInput,
+): StoryListOptions => (typeof input === "string" ? { page: input } : input);
+
+const doesPageMatch = (page: string | undefined, pages: readonly string[]) => {
+  const normalizedPage = normalizePath(page ?? "");
+
+  if (!normalizedPage) {
+    return true;
+  }
+
+  return pages.some((candidate) => {
+    const normalizedCandidate = normalizePath(candidate);
+
+    return (
+      normalizedCandidate === normalizedPage ||
+      (normalizedCandidate !== "/" &&
+        normalizedPage.startsWith(`${normalizedCandidate}/`))
+    );
+  });
+};
+
+const doesStoryQueryMatch = (query: string, story: StoryCatalogItem) => {
+  if (!query) {
+    return true;
+  }
+
+  return [
+    story.description,
+    story.key,
+    story.title,
+    ...story.entries,
+    ...story.pages,
+  ].some((value) => value.toLocaleLowerCase().includes(query));
+};
+
+const normalizeSearchOptions = (
+  input: TestModeSearchInput,
+): TestModeSearchOptions => (typeof input === "string" ? { query: input } : input);
+
+const doesFeatureQueryMatch = (query: string, feature: FeatureCatalogItem) => {
+  if (!query) {
+    return true;
+  }
+
+  return [
+    feature.caseKey,
+    feature.description,
+    feature.key,
+    feature.mode,
+    feature.path,
+    ...feature.pages,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => value.toLocaleLowerCase().includes(query));
+};
+
 export class TestMode {
   readonly cookieKey: string;
   readonly eventName: string;
@@ -573,6 +705,7 @@ export class TestMode {
   private readonly enabled: boolean | (() => boolean);
   private readonly logger: false | TestModeLogger | undefined;
   private definitions: RuntimeDefinition[];
+  private storiesCatalog: StoryDefinition[];
   private memoryPaths: string[] = [];
   private listeners = new Set<(paths: string[]) => void>();
 
@@ -583,6 +716,7 @@ export class TestMode {
     eventName = DEFAULT_CHANGE_EVENT,
     logger,
     patchDefinitions = [],
+    stories = [],
     storageKey = DEFAULT_STORAGE_KEY,
   }: TestModeOptions = {}) {
     this.cookieKey = cookieKey ?? storageKey;
@@ -596,6 +730,8 @@ export class TestMode {
         normalizeDefinition(definition, "patch"),
       ),
     ];
+    this.storiesCatalog = stories.map(defineStory);
+    this.assertStoriesAreValid();
   }
 
   isAvailable = () =>
@@ -604,6 +740,7 @@ export class TestMode {
   register = (
     definitions: readonly MockDefinition[] = [],
     patchDefinitions: readonly PatchDefinition[] = [],
+    stories: readonly StoryDefinition[] = [],
   ) => {
     this.definitions = [
       ...this.definitions,
@@ -612,9 +749,35 @@ export class TestMode {
         normalizeDefinition(definition, "patch"),
       ),
     ];
+    this.storiesCatalog = [...this.storiesCatalog, ...stories.map(defineStory)];
+    this.assertStoriesAreValid();
   };
 
   active = (cookieHeader?: string | null) => this.read(cookieHeader);
+
+  isActiveForPage = (page: string, cookieHeader?: string | null) => {
+    const activeKeys = new Set(this.read(cookieHeader));
+    const activeDefinitions = this.definitions.filter((definition) =>
+      activeKeys.has(definition.key),
+    );
+
+    return (
+      activeDefinitions.some((definition) =>
+        this.definitionMatchesPage(definition, page),
+      ) ||
+      this.storiesCatalog.some((story) => {
+        const entries = story.entries.filter((item) =>
+          Boolean(this.findDefinitionByInput(item)),
+        );
+
+        return (
+          entries.length > 0 &&
+          entries.every((item) => activeKeys.has(item)) &&
+          doesPageMatch(page, this.getStoryPages(story))
+        );
+      })
+    );
+  };
 
   list = () => {
     const active = this.read();
@@ -624,6 +787,7 @@ export class TestMode {
         description: definition.description ?? "No description",
         key: definition.key,
         mode: definition.mode,
+        pages: definition.pages,
         path: definition.path,
         ...(definition.caseKey ? { caseKey: definition.caseKey } : {}),
       }))
@@ -633,6 +797,81 @@ export class TestMode {
       active: items.filter((item) => item.active),
       inactive: items.filter((item) => !item.active),
     };
+  };
+
+  features = this.list;
+
+  stories = (input: StoryListInput = {}) => {
+    if (!this.isAvailable()) {
+      return [];
+    }
+
+    const options = normalizeStoryListOptions(input);
+    const active = this.read();
+    const query = normalizeStoryQuery(options.query);
+
+    return this.storiesCatalog
+      .map((story) => {
+        const entries = story.entries.filter((item) =>
+          Boolean(this.findDefinitionByInput(item)),
+        );
+        const pages = this.getStoryPages(story);
+
+        return {
+          active:
+            entries.length > 0 &&
+            entries.every((item) => active.includes(item)),
+          activeEntries: entries.filter((item) => active.includes(item)),
+          description: story.description,
+          entries,
+          key: story.key,
+          pages,
+          title: story.title,
+          unavailableEntries: story.entries.filter(
+            (item) => !this.findDefinitionByInput(item),
+          ),
+        };
+      })
+      .filter((story) => !options.storyKey || story.key === options.storyKey)
+      .filter((story) => doesPageMatch(options.page, story.pages))
+      .filter((story) => doesStoryQueryMatch(query, story))
+      .filter(
+        (story) =>
+          typeof options.active !== "boolean" || story.active === options.active,
+      )
+      .sort((left, right) => left.title.localeCompare(right.title));
+  };
+
+  search = (input: TestModeSearchInput = {}): TestModeSearchResult => {
+    const options = normalizeSearchOptions(input);
+    const query = normalizeStoryQuery(options.query);
+    const featureItems = [...this.list().active, ...this.list().inactive]
+      .filter((feature) => doesPageMatch(options.page, feature.pages))
+      .filter((feature) => doesFeatureQueryMatch(query, feature))
+      .filter(
+        (feature) =>
+          typeof options.active !== "boolean" || feature.active === options.active,
+      );
+
+    return {
+      features: featureItems,
+      stories: this.stories(options),
+    };
+  };
+
+  hasStory = (storyKey: string) =>
+    this.storiesCatalog.some((story) => story.key === storyKey);
+
+  story = (storyKey: string) => {
+    const story = this.findStory(storyKey);
+
+    return story ? this.set(story.entries) : this.read();
+  };
+
+  addStory = (storyKey: string) => {
+    const story = this.findStory(storyKey);
+
+    return story ? this.set([...this.read(), ...story.entries]) : this.read();
   };
 
   set = (paths: readonly string[] | string) => {
@@ -887,14 +1126,29 @@ export class TestMode {
       return "";
     }
 
-    const definition = this.definitions.find(
+    const definition = this.findDefinitionByEntry(entry);
+
+    return definition?.key ?? "";
+  };
+
+  private findDefinitionByInput = (input: string) => {
+    const exact = this.definitions.find((definition) => definition.key === input);
+
+    if (exact) {
+      return exact;
+    }
+
+    const entry = parseEntry(input);
+
+    return entry ? this.findDefinitionByEntry(entry) : null;
+  };
+
+  private findDefinitionByEntry = (entry: ActiveEntry) =>
+    this.definitions.find(
       (item) =>
         item.caseKey === entry.caseKey &&
         isSamePath(item.path, entry.path),
     );
-
-    return definition?.key ?? "";
-  };
 
   private conflicts = (leftKey: string, rightKey: string) => {
     const left = this.definitions.find((definition) => definition.key === leftKey);
@@ -980,6 +1234,65 @@ export class TestMode {
     }
 
     this.logger?.[level]?.(message, data);
+  };
+
+  private findStory = (storyKey: string) =>
+    this.storiesCatalog.find((story) => story.key === storyKey) ?? null;
+
+  private definitionMatchesPage = (
+    definition: RuntimeDefinition,
+    page: string,
+  ) => definition.pages.length === 0 || doesPageMatch(page, definition.pages);
+
+  private getStoryPages = (story: StoryDefinition) =>
+    Array.from(
+      new Set([
+        ...story.pages,
+        ...story.entries.flatMap(
+          (item) => this.findDefinitionByInput(item)?.pages ?? [],
+        ),
+      ]),
+    ).sort();
+
+  private assertStoriesAreValid = () => {
+    const seenStoryKeys = new Set<string>();
+    const errors: string[] = [];
+
+    for (const story of this.storiesCatalog) {
+      if (!story.key.trim()) {
+        errors.push("Story key is required.");
+      } else if (seenStoryKeys.has(story.key)) {
+        errors.push(`Duplicate story key: ${story.key}`);
+      }
+
+      seenStoryKeys.add(story.key);
+
+      if (!story.title.trim()) {
+        errors.push(`Story title is required: ${story.key || "(missing key)"}`);
+      }
+
+      if (!story.description.trim()) {
+        errors.push(`Story description is required: ${story.key || "(missing key)"}`);
+      }
+
+      if (this.getStoryPages(story).length === 0) {
+        errors.push(`Story pages are required: ${story.key || "(missing key)"}`);
+      }
+
+      if (story.entries.length === 0) {
+        errors.push(`Story entries are required: ${story.key || "(missing key)"}`);
+      }
+
+      for (const item of story.entries) {
+        if (!this.findDefinitionByInput(item)) {
+          errors.push(`Story references unknown entry: ${story.key}: ${item}`);
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new Error(`Invalid test-mode stories:\n${errors.join("\n")}`);
+    }
   };
 }
 
@@ -1112,47 +1425,116 @@ export const installConsole = (
     return testMode.clear();
   };
   const list = () => {
-    const catalog = testMode.list();
-    const extensionItems: CatalogItem[] = extensions.map((extension) => ({
-      active: extension.isActive(),
-      description: extension.label,
-      key: extension.key,
-      mode: "extension",
-      path: extension.key,
-    }));
-
-    return {
-      active: [
-        ...catalog.active,
-        ...extensionItems.filter((item) => item.active),
-      ],
-      inactive: [
-        ...catalog.inactive,
-        ...extensionItems.filter((item) => !item.active),
-      ],
-    };
+    return testMode.list();
   };
-  const uninstallExtensions = shouldInstallExtensions
-    ? installExtensions(testMode, extensions, () => undefined)
-    : () => {};
-  const api = Object.assign((path: string) => toggle(path), {
-    active,
+  const feat = {
     add,
-    clear,
-    isEnabled: () => active().length > 0,
     list,
     remove,
     set,
     toggle,
-  });
+  };
+  const findStoryCatalogItem = (storyKey: string) =>
+    testMode.stories({ storyKey })[0] ?? null;
+  const setStories = (storyKeys: readonly string[] | string) =>
+    testMode.set(
+      parseInputList(storyKeys).flatMap(
+        (storyKey) => findStoryCatalogItem(storyKey)?.entries ?? [],
+      ),
+    );
+  const removeStory = (storyKey: string) => {
+    const story = findStoryCatalogItem(storyKey);
 
-  target[namespace] = api;
+    if (!story) {
+      return testMode.active();
+    }
+
+    const storyEntries = new Set(story.entries);
+
+    return testMode.set(
+      testMode.active().filter((item) => !storyEntries.has(item)),
+    );
+  };
+  const toggleStory = (storyKey: string) => {
+    const story = findStoryCatalogItem(storyKey);
+
+    if (!story) {
+      return testMode.active();
+    }
+
+    return story.active ? removeStory(storyKey) : testMode.addStory(storyKey);
+  };
+  const apply = (input: string) =>
+    testMode.hasStory(input) ? setStories(input) : toggle(input);
+  const storyCommand = Object.assign(
+    (storyKey: string) => setStories(storyKey),
+    {
+      add: (storyKey: string) => testMode.addStory(storyKey),
+      list: (input?: StoryListInput) => testMode.stories(input),
+      remove: removeStory,
+      set: setStories,
+      toggle: toggleStory,
+    },
+  );
+  const help = (): TestModeConsoleHelp => ({
+    commands: {
+      "test()": "Show this help.",
+      "test('story.key')": "Apply a story when the key exists; otherwise toggle a feature entry.",
+      "test.clear()": "Disable all entries and extensions.",
+      "test.feat.add('path:caseKey')": "Enable one feature entry.",
+      "test.feat.list()": "List feature mock/patch API entries.",
+      "test.feat.remove('path:caseKey')": "Disable one feature entry.",
+      "test.feat.set(['path:caseKey'])": "Replace active feature entries and extensions.",
+      "test.feat.toggle('path:caseKey')": "Toggle one feature entry.",
+      "test.search('query')": "Search feature and story catalogs together.",
+      "test.story('story.key')": "Replace active entries with one story. Alias of test.story.set('story.key').",
+      "test.story.add('story.key')": "Add a story without clearing currently active entries.",
+      "test.story.list()": "List story scenarios.",
+      "test.story.list('/page')": "List story scenarios available for a page.",
+      "test.story.remove('story.key')": "Remove one story's entries from the active entries.",
+      "test.story.set(['story.key'])": "Replace active entries with one or more stories.",
+      "test.story.toggle('story.key')": "Toggle one story.",
+    },
+    examples: [
+      "test()",
+      "test.story.list('/cart')",
+      "test.search('cart')",
+      "test.story('cart.discount-flow')",
+      "test.story.add('main.event-popup')",
+      "test.feat.add('/api/session/signin:locked')",
+      "test.active()",
+      "test.clear()",
+    ],
+    summary:
+      "Use story commands for shared screen states; use feat commands for one API mock/patch entry at a time.",
+  });
+  const uninstallExtensions = shouldInstallExtensions
+    ? installExtensions(testMode, extensions, () => undefined)
+    : () => {};
+  const run = (input?: string) =>
+    typeof input === "string" && input.trim() ? apply(input) : help();
+  const api = Object.assign(run, {
+    active,
+    clear,
+    feat,
+    help,
+    isEnabled: () => active().length > 0,
+    search: (input?: TestModeSearchInput) => testMode.search(input),
+    story: storyCommand,
+  });
+  const storyAwareApi = api;
+
+  target[namespace] = storyAwareApi;
   Object.defineProperty(window, globalName, {
     configurable: true,
-    get: () => api,
+    get: () => storyAwareApi,
     set: (value) => {
       if (typeof value === "string") {
-        testMode.set(value);
+        if (testMode.hasStory(value)) {
+          setStories(value);
+        } else {
+          testMode.set(value);
+        }
       }
     },
   });
@@ -1254,9 +1636,14 @@ export const installTestModeOverlay = (
   }
 
   const overlay = createOverlay(documentRef, watermarkText, zIndex);
+  const getCurrentPage = () =>
+    normalizePath(
+      documentRef.location?.pathname ??
+        (typeof window === "undefined" ? "/" : window.location.pathname),
+    );
   const sync = () => {
     const visible =
-      testMode.active().length > 0 ||
+      testMode.isActiveForPage(getCurrentPage()) ||
       extensions.some((extension) => extension.isActive());
 
     if (visible) {
@@ -1283,6 +1670,37 @@ export const installTestModeOverlay = (
   };
   const uninstallExtensions = installExtensions(testMode, extensions, sync);
   const unsubscribe = testMode.subscribe(sync);
+  const windowRef = documentRef.defaultView;
+  const originalPushState = windowRef?.history.pushState;
+  const originalReplaceState = windowRef?.history.replaceState;
+  const scheduleSync = () => {
+    windowRef?.setTimeout(sync, 0);
+  };
+
+  if (windowRef) {
+    windowRef.addEventListener("hashchange", scheduleSync);
+    windowRef.addEventListener("popstate", scheduleSync);
+
+    if (originalPushState) {
+      windowRef.history.pushState = function pushState(...args) {
+        const result = originalPushState.apply(this, args);
+
+        scheduleSync();
+
+        return result;
+      };
+    }
+
+    if (originalReplaceState) {
+      windowRef.history.replaceState = function replaceState(...args) {
+        const result = originalReplaceState.apply(this, args);
+
+        scheduleSync();
+
+        return result;
+      };
+    }
+  }
   const uninstallConsole = shouldInstallConsole
     ? installConsole(testMode, {
         extensions,
@@ -1298,6 +1716,20 @@ export const installTestModeOverlay = (
     uninstallConsole();
     unsubscribe();
     uninstallExtensions();
+
+    if (windowRef) {
+      windowRef.removeEventListener("hashchange", scheduleSync);
+      windowRef.removeEventListener("popstate", scheduleSync);
+
+      if (originalPushState) {
+        windowRef.history.pushState = originalPushState;
+      }
+
+      if (originalReplaceState) {
+        windowRef.history.replaceState = originalReplaceState;
+      }
+    }
+
     overlay.remove();
   };
 };

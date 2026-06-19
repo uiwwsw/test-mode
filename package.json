@@ -1,7 +1,7 @@
 {
   "name": "@uiwwsw/test-mode",
   "version": "0.1.0",
-  "description": "Vanilla TypeScript API test mode runtime with browser overlay and fetch patching.",
+  "description": "Vanilla TypeScript API test mode runtime with story scenarios, browser overlay, and fetch patching.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "license": "MIT",
@@ -9,6 +9,8 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "docs/story-test-design.md",
+    "templates/test-mode",
     "CHANGELOG.md",
     "LICENSE",
     "README.md"
@@ -33,6 +35,8 @@
   "keywords": [
     "api",
     "mock",
+    "story",
+    "scenario",
     "test-mode",
     "fetch",
     "overlay",
