@@ -49,12 +49,57 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
       - run: npm ci
+      - name: Check whether this commit was already published
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const response = await fetch(`https://registry.npmjs.org/${name}/${version}`, { signal: AbortSignal.timeout(15000) });
+          if (response.ok) {
+            const published = await response.json();
+            const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+            assert.equal(published.name, name);
+            assert.equal(published.version, version);
+            assert.equal(published.gitHead, head, 'This version belongs to a different commit; release a new version.');
+            appendFileSync(process.env.GITHUB_ENV, 'NPM_ALREADY_PUBLISHED=true\n');
+            console.log(`${name}@${version} was already published from this commit.`);
+          } else if (response.status !== 404) {
+            throw new Error(`Registry preflight failed: HTTP ${response.status}`);
+          }
+          JS
       - name: Publish verified package with provenance
+        if: env.NPM_ALREADY_PUBLISHED != 'true'
         run: npm publish --access public --provenance --tag "$NPM_DIST_TAG"
         env:
           # Used for initial publication; npm also supports OIDC after trusted publisher setup.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Verify registry version
+      - name: Verify registry version with propagation retries
         run: |
-          VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
-          npm view "@uiwwsw/test-mode@$VERSION" version dist.integrity --registry=https://registry.npmjs.org
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+          import { setTimeout } from 'node:timers/promises';
+          const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          for (let attempt = 1; attempt <= 12; attempt++) {
+            try {
+              const response = await fetch(`https://registry.npmjs.org/${name}/${version}`, { signal: AbortSignal.timeout(15000) });
+              if (!response.ok) throw new Error(`Registry returned HTTP ${response.status}`);
+              const published = await response.json();
+              assert.equal(published.name, name);
+              assert.equal(published.version, version);
+              assert.equal(published.gitHead, head);
+              assert.ok(published.dist?.integrity, 'Missing package integrity');
+              assert.ok(published.dist?.attestations?.provenance, 'Missing provenance');
+              console.log(`Verified ${name}@${version}: ${published.dist.integrity}`);
+              break;
+            } catch (error) {
+              if (attempt === 12) throw error;
+              console.log(`Registry verification attempt ${attempt}/12: ${error.message}. Retrying in 10 seconds.`);
+              await setTimeout(10000);
+            }
+          }
+          JS
