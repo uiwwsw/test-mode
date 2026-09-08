@@ -2,41 +2,59 @@ name: Publish
 
 on:
   release:
-    types:
-      - published
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag on main (e.g. v0.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+
   npm:
+    name: Publish to npm
+    needs: verify
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 10.33.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.14.0
+          node-version: '24'
           registry-url: https://registry.npmjs.org
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify package
-        run: pnpm run typecheck
-
-      - name: Publish to npm
-        run: pnpm publish --access public --provenance --no-git-checks
+          package-manager-cache: false
+      - name: Validate tag, package version and main ancestry
+        run: npm run release:check
         env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+      - run: npm ci
+      - name: Publish verified package with provenance
+        run: npm publish --access public --provenance --tag "$NPM_DIST_TAG"
+        env:
+          # Used for initial publication; npm also supports OIDC after trusted publisher setup.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify registry version
+        run: |
+          VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          npm view "@uiwwsw/test-mode@$VERSION" version dist.integrity --registry=https://registry.npmjs.org

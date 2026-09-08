@@ -1,15 +1,16 @@
 {
   "name": "@uiwwsw/test-mode",
   "version": "0.1.0",
-  "description": "Vanilla TypeScript API test mode runtime with story scenarios, browser overlay, and fetch patching.",
+  "description": "Framework-neutral API scenario runtime for development and QA: fetch mocks, response patches, browser controls, and server adapters.",
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "npm@11.16.0",
   "license": "MIT",
   "author": "uiwwsw",
   "sideEffects": false,
   "files": [
     "dist",
-    "docs/story-test-design.md",
+    "src",
+    "docs/*.md",
     "templates/test-mode",
     "CHANGELOG.md",
     "LICENSE",
@@ -24,13 +25,17 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "ci": "pnpm run typecheck && pnpm run build && pnpm pack --dry-run",
-    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
-    "prepack": "pnpm run clean && pnpm run build",
-    "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run build",
-    "pack:dry-run": "pnpm pack --dry-run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:browser": "npm run build && playwright test",
+    "test:package": "node scripts/check-package.mjs",
+    "ci": "npm run typecheck && npm test && npm run test:package",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run ci",
+    "pack:dry-run": "npm pack --dry-run",
+    "release:check": "node scripts/check-release.mjs"
   },
   "keywords": [
     "api",
@@ -57,6 +62,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "@playwright/test": "1.63.0",
+    "typescript": "5.9.3"
   }
 }

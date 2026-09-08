@@ -7,3 +7,5 @@ coverage/
 .env
 .env.*
 .DS_Store
+playwright-report/
+test-results/

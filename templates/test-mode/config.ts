@@ -1,4 +1,4 @@
-﻿import type { TestModeOptions, TestModeOverlayOptions } from "@uiwwsw/test-mode";
+import type { TestModeOptions, TestModeOverlayOptions } from "@uiwwsw/test-mode";
 
 const readNodeEnv = () =>
   (globalThis as { process?: { env?: Record<string, string | undefined> } })
@@ -6,7 +6,7 @@ const readNodeEnv = () =>
 
 export const runtimeConfig = {
   cookieKey: "app.test.mode.entries",
-  enabled: () => readNodeEnv() !== "production",
+  enabled: () => ["development", "test"].includes(readNodeEnv() ?? ""),
   eventName: "app-test-mode:change",
   storageKey: "app.test.mode.entries",
 } satisfies Pick<
@@ -23,6 +23,3 @@ export const testOverlayConfig = {
   TestModeOverlayOptions,
   "datasetName" | "globalName" | "namespace" | "watermarkText"
 >;
-
-
-

@@ -1,9 +1,12 @@
-const MOCK_RESULT = Symbol("DOMINOS_TEST_MODE_MOCK_RESULT");
-const MOCK_PASS_THROUGH = Symbol("DOMINOS_TEST_MODE_PASS_THROUGH");
-const DEFAULT_STORAGE_KEY = "dominos.test.mockRemotePaths";
-const DEFAULT_CHANGE_EVENT = "dominos-test-mode:change";
+export { createMockFetch, installMockFetch } from "./fetch.js";
+export type { MockFetchOptions } from "./fetch.js";
+
+const MOCK_RESULT = Symbol("TEST_MODE_MOCK_RESULT");
+const MOCK_PASS_THROUGH = Symbol("TEST_MODE_PASS_THROUGH");
+const DEFAULT_STORAGE_KEY = "test-mode.entries";
+const DEFAULT_CHANGE_EVENT = "test-mode:change";
 const DEFAULT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
-const BODYLESS_METHODS = new Set(["DELETE", "GET", "HEAD"]);
+const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
 
 export type TestModeLogger = Partial<
   Record<"debug" | "error" | "info" | "warning", (message: string, data?: unknown) => void>
@@ -74,6 +77,11 @@ export type PatchDefinition<TRequest = unknown, TResponse = unknown> = Readonly<
   pages?: readonly string[];
   path: string;
 }>;
+
+// A registry contains heterogeneous routes. Erase types only at this boundary;
+// defineMock/definePatch still type-check each handler's request and response.
+type RegisteredMockDefinition = MockDefinition<any, any>;
+type RegisteredPatchDefinition = PatchDefinition<any, any>;
 
 export type TestModeRequest = Readonly<{
   body?: unknown | undefined;
@@ -168,11 +176,11 @@ export type ToggleExtensionOptions = Readonly<{
 
 export type TestModeOptions = Readonly<{
   cookieKey?: string;
-  definitions?: readonly MockDefinition[];
+  definitions?: readonly RegisteredMockDefinition[];
   enabled?: boolean | (() => boolean);
   eventName?: string;
   logger?: false | TestModeLogger;
-  patchDefinitions?: readonly PatchDefinition[];
+  patchDefinitions?: readonly RegisteredPatchDefinition[];
   stories?: readonly StoryDefinition[];
   storageKey?: string;
 }>;
@@ -186,13 +194,6 @@ export type TestModeOverlayOptions = Readonly<{
   namespace?: string;
   watermarkText?: string;
   zIndex?: number;
-}>;
-
-export type MockFetchOptions = Readonly<{
-  cookieHeader?: string | null;
-  mapRequest?: (request: TestModeRequest) => Promise<TestModeRequest> | TestModeRequest;
-  originalFetch?: typeof fetch;
-  target?: { fetch: typeof fetch };
 }>;
 
 export type TestModeConsoleOptions = Readonly<{
@@ -226,13 +227,11 @@ type ActiveEntry = Readonly<{
   serialized: string;
 }>;
 
-const requestCounts = new Map<string, number>();
-
 const readNodeEnv = () =>
   (globalThis as { process?: { env?: Record<string, string | undefined> } })
     .process?.env?.NODE_ENV;
 
-const defaultEnabled = () => readNodeEnv() !== "production";
+const defaultEnabled = () => ["development", "test"].includes(readNodeEnv() ?? "");
 
 const parseInputList = (value: readonly string[] | string) =>
   (typeof value === "string" ? value.split(/[;,]/) : [...value])
@@ -249,11 +248,9 @@ export const normalizePath = (path: string) => {
   try {
     const base =
       typeof window === "undefined"
-        ? "https://front.dominos.co.kr"
+        ? "https://test-mode.invalid"
         : window.location.origin;
-    const parsedUrl = URL.canParse(trimmed)
-      ? new URL(trimmed)
-      : new URL(trimmed, base);
+    const parsedUrl = new URL(trimmed, base);
 
     return parsedUrl.pathname || "/";
   } catch {
@@ -303,9 +300,12 @@ const parseEntry = (value: string): ActiveEntry | null => {
   }
 
   const path = normalizedValue.slice(0, separatorIndex);
-  const caseKey = decodeURIComponent(
-    normalizedValue.slice(separatorIndex + 1).trim(),
-  );
+  let caseKey: string;
+  try {
+    caseKey = decodeURIComponent(normalizedValue.slice(separatorIndex + 1).trim());
+  } catch {
+    return null;
+  }
 
   if (!path || !caseKey) {
     return {
@@ -422,12 +422,36 @@ const writeCookie = (
     return;
   }
 
-  document.cookie = [
-    `${name}=${encodeURIComponent(JSON.stringify(paths))}`,
-    "path=/",
-    `max-age=${maxAgeSeconds}`,
-    "samesite=lax",
-  ].join("; ");
+  try {
+    document.cookie = [
+      `${name}=${encodeURIComponent(JSON.stringify(paths))}`,
+      "path=/",
+      `max-age=${maxAgeSeconds}`,
+      "samesite=lax",
+    ].join("; ");
+  } catch {
+    // Sandboxed browsers can disable cookies; in-memory controls still work.
+  }
+};
+
+const readBrowserStorage = (key: string): string | null | undefined => {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage.getItem(key);
+  } catch {
+    return undefined;
+  }
+};
+
+const writeBrowserStorage = (key: string, value: string | null) => {
+  try {
+    if (typeof window === "undefined") return false;
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    // Storage is best effort (e.g. blocked access or an exhausted quota).
+    return false;
+  }
 };
 
 const isMockHttpResult = (value: unknown): value is MockHttpResult =>
@@ -487,27 +511,6 @@ export const defineStory = (
   title: story.title,
 });
 
-const readExtensionStorage = (storageKey: string) => {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  return window.localStorage.getItem(storageKey) === "true";
-};
-
-const writeExtensionStorage = (storageKey: string, active: boolean) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (active) {
-    window.localStorage.setItem(storageKey, "true");
-    return;
-  }
-
-  window.localStorage.removeItem(storageKey);
-};
-
 export const createToggleExtension = ({
   aliases = [],
   key,
@@ -515,15 +518,16 @@ export const createToggleExtension = ({
   onDisable,
   onEnable,
   setup,
-  storageKey = `dominos.test.extension.${key}`,
+  storageKey = `test-mode.extension.${key}`,
 }: ToggleExtensionOptions): TestModeExtension => {
   let activeInMemory = false;
+  let memoryOnly = false;
   let sideEffectApplied = false;
   const listeners = new Set<() => void>();
-  const isActive = () =>
-    typeof window === "undefined"
-      ? activeInMemory
-      : readExtensionStorage(storageKey);
+  const isActive = () => {
+    const stored = readBrowserStorage(storageKey);
+    return memoryOnly || stored === undefined ? activeInMemory : stored === "true";
+  };
   const notify = () => {
     for (const listener of listeners) {
       listener();
@@ -547,13 +551,13 @@ export const createToggleExtension = ({
   };
   const enable = () => {
     activeInMemory = true;
-    writeExtensionStorage(storageKey, true);
+    memoryOnly = !writeBrowserStorage(storageKey, "true");
     applySideEffect();
     notify();
   };
   const disable = () => {
     activeInMemory = false;
-    writeExtensionStorage(storageKey, false);
+    memoryOnly = !writeBrowserStorage(storageKey, null);
     releaseSideEffect();
     notify();
   };
@@ -596,7 +600,7 @@ export const createToggleExtension = ({
 };
 
 const normalizeDefinition = (
-  definition: MockDefinition | PatchDefinition,
+  definition: RegisteredMockDefinition | RegisteredPatchDefinition,
   mode: "mock" | "patch",
 ): RuntimeDefinition => {
   const method = normalizeMethods(definition.method);
@@ -708,6 +712,9 @@ export class TestMode {
   private storiesCatalog: StoryDefinition[];
   private memoryPaths: string[] = [];
   private listeners = new Set<(paths: string[]) => void>();
+  private readonly requestCounts = new Map<string, number>();
+  private dispatchingChange = false;
+  private memoryOnly = false;
 
   constructor({
     cookieKey,
@@ -732,16 +739,19 @@ export class TestMode {
     ];
     this.storiesCatalog = stories.map(defineStory);
     this.assertStoriesAreValid();
+    this.canonicalizeStories();
   }
 
   isAvailable = () =>
     typeof this.enabled === "function" ? this.enabled() : this.enabled;
 
   register = (
-    definitions: readonly MockDefinition[] = [],
-    patchDefinitions: readonly PatchDefinition[] = [],
+    definitions: readonly RegisteredMockDefinition[] = [],
+    patchDefinitions: readonly RegisteredPatchDefinition[] = [],
     stories: readonly StoryDefinition[] = [],
   ) => {
+    const previousDefinitions = this.definitions;
+    const previousStories = this.storiesCatalog;
     this.definitions = [
       ...this.definitions,
       ...definitions.map((definition) => normalizeDefinition(definition, "mock")),
@@ -750,7 +760,14 @@ export class TestMode {
       ),
     ];
     this.storiesCatalog = [...this.storiesCatalog, ...stories.map(defineStory)];
-    this.assertStoriesAreValid();
+    try {
+      this.assertStoriesAreValid();
+      this.canonicalizeStories();
+    } catch (error) {
+      this.definitions = previousDefinitions;
+      this.storiesCatalog = previousStories;
+      throw error;
+    }
   };
 
   active = (cookieHeader?: string | null) => this.read(cookieHeader);
@@ -884,15 +901,8 @@ export class TestMode {
         continue;
       }
 
-      const existingIndex = nextPaths.findIndex((path) =>
-        this.conflicts(path, key),
-      );
-
-      if (existingIndex >= 0) {
-        nextPaths[existingIndex] = key;
-      } else {
-        nextPaths.push(key);
-      }
+      const compatible = nextPaths.filter((path) => !this.conflicts(path, key));
+      nextPaths.splice(0, nextPaths.length, ...compatible, key);
     }
 
     return this.write(nextPaths.sort());
@@ -935,11 +945,13 @@ export class TestMode {
 
     if (typeof window !== "undefined") {
       const handleStorage = (event: StorageEvent) => {
-        if (event.key === this.storageKey) {
+        if (event.key === this.storageKey || event.key === null) {
           listener(this.read());
         }
       };
-      const handleCustomEvent = () => listener(this.read());
+      const handleCustomEvent = () => {
+        if (!this.dispatchingChange) listener(this.read());
+      };
 
       window.addEventListener("storage", handleStorage);
       window.addEventListener(this.eventName, handleCustomEvent);
@@ -1009,7 +1021,14 @@ export class TestMode {
     };
   };
 
-  patch = async ({
+  hasMock = (request: TestModeRequest) =>
+    this.findActiveDefinition("mock", request) !== null;
+
+  hasPatch = (request: TestModeRequest) =>
+    this.findActiveDefinition("patch", request) !== null;
+
+  /** Unlike patch(), this distinguishes a JSON null payload from no match. */
+  applyPatch = async ({
     body,
     cookieHeader,
     data,
@@ -1018,7 +1037,7 @@ export class TestMode {
     params,
     path,
     url,
-  }: TestModePatchRequest): Promise<unknown | null> => {
+  }: TestModePatchRequest): Promise<Readonly<{ data: unknown }> | null> => {
     const definition = this.findActiveDefinition("patch", {
       cookieHeader,
       headers,
@@ -1036,7 +1055,7 @@ export class TestMode {
     const normalizedPath = normalizePath(path);
     const request = BODYLESS_METHODS.has(normalizedMethod) ? params : body;
 
-    return await (definition.handler as PatchHandler)(data, {
+    const patched = await (definition.handler as PatchHandler)(data, {
       activeKey: definition.key,
       body: request,
       headers,
@@ -1047,6 +1066,13 @@ export class TestMode {
       requestCount: this.nextRequestCount(definition.key),
       url: url ?? normalizedPath,
     });
+    return { data: patched };
+  };
+
+  /** Compatibility helper. Use applyPatch() when a handler can return null. */
+  patch = async (request: TestModePatchRequest): Promise<unknown | null> => {
+    const result = await this.applyPatch(request);
+    return result === null ? null : result.data;
   };
 
   private read = (cookieHeader?: string | null) => {
@@ -1060,42 +1086,47 @@ export class TestMode {
       );
     }
 
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || this.memoryOnly) {
       return [...this.memoryPaths];
     }
 
-    const cookiePaths =
-      typeof document === "undefined"
-        ? []
-        : parseStoredPaths(readCookieValue(document.cookie, this.cookieKey));
-
-    if (cookiePaths.length > 0) {
-      return this.normalizeActivePaths(cookiePaths);
+    const stored = readBrowserStorage(this.storageKey);
+    if (typeof stored === "string") {
+      return this.normalizeActivePaths(parseStoredPaths(stored));
     }
-
-    return this.normalizeActivePaths(
-      parseStoredPaths(window.localStorage.getItem(this.storageKey)),
-    );
+    try {
+      const cookie = typeof document === "undefined" ? "" : readCookieValue(document.cookie, this.cookieKey);
+      if (cookie) return this.normalizeActivePaths(parseStoredPaths(cookie));
+    } catch {
+      // Fall back to the instance state when browser persistence is unavailable.
+    }
+    return [...this.memoryPaths];
   };
 
   private write = (paths: readonly string[]) => {
+    if (!this.isAvailable()) return [];
     const normalizedPaths = this.normalizeActivePaths(paths);
 
     this.memoryPaths = normalizedPaths;
 
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(this.storageKey, JSON.stringify(normalizedPaths));
+      this.memoryOnly = !writeBrowserStorage(this.storageKey, JSON.stringify(normalizedPaths));
       writeCookie(this.cookieKey, normalizedPaths);
-      window.dispatchEvent(
-        new CustomEvent<string[]>(this.eventName, { detail: normalizedPaths }),
-      );
+      this.dispatchingChange = true;
+      try {
+        window.dispatchEvent(
+          new CustomEvent<string[]>(this.eventName, { detail: [...normalizedPaths] }),
+        );
+      } finally {
+        this.dispatchingChange = false;
+      }
     }
 
     for (const listener of this.listeners) {
-      listener(normalizedPaths);
+      listener([...normalizedPaths]);
     }
 
-    return normalizedPaths;
+    return [...normalizedPaths];
   };
 
   private normalizeActivePaths = (paths: readonly string[]) =>
@@ -1151,14 +1182,16 @@ export class TestMode {
     );
 
   private conflicts = (leftKey: string, rightKey: string) => {
-    const left = this.definitions.find((definition) => definition.key === leftKey);
-    const right = this.definitions.find((definition) => definition.key === rightKey);
+    const left = this.definitions.filter((definition) => definition.key === leftKey);
+    const right = this.definitions.filter((definition) => definition.key === rightKey);
 
-    if (!left || !right) {
+    if (left.length === 0 || right.length === 0) {
       return leftKey === rightKey;
     }
 
-    return isSamePath(left.path, right.path) && methodsOverlap(left.method, right.method);
+    return left.some((a) => right.some((b) =>
+      isSamePath(a.path, b.path) && methodsOverlap(a.method, b.method),
+    ));
   };
 
   private findActiveDefinition = (
@@ -1173,21 +1206,19 @@ export class TestMode {
     const normalizedPath = normalizePath(request.path);
 
     for (const key of this.read(request.cookieHeader)) {
-      const definition = this.definitions.find(
-        (item) => item.mode === mode && item.key === key,
-      );
-
-      if (
-        definition &&
-        this.methodMatches(definition, normalizedMethod) &&
-        this.routeMatches(definition, {
+      const definition = this.definitions.find((item) =>
+        item.mode === mode && item.key === key &&
+        this.methodMatches(item, normalizedMethod) &&
+        this.routeMatches(item, {
           headers: request.headers ?? {},
           method: normalizedMethod,
           params: request.params,
           path: normalizedPath,
           url: request.url ?? normalizedPath,
-        })
-      ) {
+        }),
+      );
+
+      if (definition) {
         return definition;
       }
     }
@@ -1217,9 +1248,9 @@ export class TestMode {
   };
 
   private nextRequestCount = (key: string) => {
-    const nextCount = (requestCounts.get(key) ?? 0) + 1;
+    const nextCount = (this.requestCounts.get(key) ?? 0) + 1;
 
-    requestCounts.set(key, nextCount);
+    this.requestCounts.set(key, nextCount);
 
     return nextCount;
   };
@@ -1258,6 +1289,15 @@ export class TestMode {
     const seenStoryKeys = new Set<string>();
     const errors: string[] = [];
 
+    for (const [index, definition] of this.definitions.entries()) {
+      if (!definition.path) errors.push("Feature path is required.");
+      if (this.definitions.slice(0, index).some((other) =>
+        isSamePath(other.path, definition.path) &&
+        other.caseKey === definition.caseKey &&
+        methodsOverlap(other.method, definition.method)
+      )) errors.push(`Ambiguous feature entry: ${definition.key}`);
+    }
+
     for (const story of this.storiesCatalog) {
       if (!story.key.trim()) {
         errors.push("Story key is required.");
@@ -1288,11 +1328,23 @@ export class TestMode {
           errors.push(`Story references unknown entry: ${story.key}: ${item}`);
         }
       }
+      const canonicalEntries = story.entries.map(this.normalizeActiveInput).filter(Boolean);
+      if (canonicalEntries.some((item, index) => canonicalEntries.slice(0, index)
+        .some((other) => other !== item && this.conflicts(item, other)))) {
+        errors.push(`Story contains conflicting entries: ${story.key}`);
+      }
     }
 
     if (errors.length > 0) {
       throw new Error(`Invalid test-mode stories:\n${errors.join("\n")}`);
     }
+  };
+
+  private canonicalizeStories = () => {
+    this.storiesCatalog = this.storiesCatalog.map((story) => ({
+      ...story,
+      entries: [...new Set(story.entries.map(this.normalizeActiveInput))],
+    }));
   };
 }
 
@@ -1348,10 +1400,10 @@ export const installConsole = (
     extensions = [],
     globalName = "test",
     installExtensions: shouldInstallExtensions = true,
-    namespace = "__dominosTestMode",
+    namespace = "__testMode",
   }: TestModeConsoleOptions = {},
 ) => {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !testMode.isAvailable()) {
     return () => {};
   }
 
@@ -1626,12 +1678,12 @@ export const installTestModeOverlay = (
     extensions = [],
     globalName = "test",
     installConsole: shouldInstallConsole = true,
-    namespace = "__dominosTestMode",
+    namespace = "__testMode",
     watermarkText = "TEST MODE",
     zIndex = 2147483647,
   }: TestModeOverlayOptions = {},
 ) => {
-  if (!documentRef) {
+  if (!documentRef || !testMode.isAvailable()) {
     return () => {};
   }
 
@@ -1642,9 +1694,9 @@ export const installTestModeOverlay = (
         (typeof window === "undefined" ? "/" : window.location.pathname),
     );
   const sync = () => {
-    const visible =
+    const visible = testMode.isAvailable() && (
       testMode.isActiveForPage(getCurrentPage()) ||
-      extensions.some((extension) => extension.isActive());
+      extensions.some((extension) => extension.isActive()));
 
     if (visible) {
       documentRef.documentElement.dataset[datasetName] = "true";
@@ -1673,16 +1725,22 @@ export const installTestModeOverlay = (
   const windowRef = documentRef.defaultView;
   const originalPushState = windowRef?.history.pushState;
   const originalReplaceState = windowRef?.history.replaceState;
+  let installed = true;
+  let timer: number | undefined;
   const scheduleSync = () => {
-    windowRef?.setTimeout(sync, 0);
+    if (!installed) return;
+    if (timer !== undefined) windowRef?.clearTimeout(timer);
+    timer = windowRef?.setTimeout(() => { if (installed) sync(); }, 0);
   };
+  let pushState: History["pushState"] | undefined;
+  let replaceState: History["replaceState"] | undefined;
 
   if (windowRef) {
     windowRef.addEventListener("hashchange", scheduleSync);
     windowRef.addEventListener("popstate", scheduleSync);
 
     if (originalPushState) {
-      windowRef.history.pushState = function pushState(...args) {
+      pushState = windowRef.history.pushState = function pushState(...args) {
         const result = originalPushState.apply(this, args);
 
         scheduleSync();
@@ -1692,7 +1750,7 @@ export const installTestModeOverlay = (
     }
 
     if (originalReplaceState) {
-      windowRef.history.replaceState = function replaceState(...args) {
+      replaceState = windowRef.history.replaceState = function replaceState(...args) {
         const result = originalReplaceState.apply(this, args);
 
         scheduleSync();
@@ -1713,6 +1771,9 @@ export const installTestModeOverlay = (
   sync();
 
   return () => {
+    if (!installed) return;
+    installed = false;
+    if (timer !== undefined) windowRef?.clearTimeout(timer);
     uninstallConsole();
     unsubscribe();
     uninstallExtensions();
@@ -1721,170 +1782,17 @@ export const installTestModeOverlay = (
       windowRef.removeEventListener("hashchange", scheduleSync);
       windowRef.removeEventListener("popstate", scheduleSync);
 
-      if (originalPushState) {
+      if (originalPushState && windowRef.history.pushState === pushState) {
         windowRef.history.pushState = originalPushState;
       }
 
-      if (originalReplaceState) {
+      if (originalReplaceState && windowRef.history.replaceState === replaceState) {
         windowRef.history.replaceState = originalReplaceState;
       }
     }
 
     overlay.remove();
-  };
-};
-
-const parseBody = async (body: BodyInit | null | undefined) => {
-  if (body === null || typeof body === "undefined") {
-    return undefined;
-  }
-
-  if (typeof body === "string") {
-    try {
-      return JSON.parse(body) as unknown;
-    } catch {
-      return body;
-    }
-  }
-
-  if (body instanceof URLSearchParams) {
-    return Object.fromEntries(body.entries());
-  }
-
-  return body;
-};
-
-const createFetchRequest = async (
-  input: RequestInfo | URL,
-  init: RequestInit | undefined,
-  cookieHeader?: string | null,
-): Promise<TestModeRequest> => {
-  const request = input instanceof Request ? input : null;
-  const base =
-    typeof window === "undefined" ? "https://front.dominos.co.kr" : window.location.href;
-  const url = new URL(request?.url ?? String(input), base);
-  const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
-  const headers = new Headers(request?.headers);
-
-  if (init?.headers) {
-    for (const [key, value] of new Headers(init.headers).entries()) {
-      headers.set(key, value);
-    }
-  }
-
-  const body =
-    BODYLESS_METHODS.has(method)
-      ? undefined
-      : init?.body
-        ? await parseBody(init.body)
-        : request
-          ? await request.clone().text().then((text) => {
-              if (!text.trim()) {
-                return undefined;
-              }
-
-              try {
-                return JSON.parse(text) as unknown;
-              } catch {
-                return text;
-              }
-            })
-          : undefined;
-
-  return {
-    body,
-    cookieHeader: cookieHeader ?? headers.get("cookie") ?? headers.get("Cookie"),
-    headers,
-    method,
-    params: Object.fromEntries(url.searchParams.entries()),
-    path: url.pathname,
-    url: url.toString(),
-  };
-};
-
-const responseFromMock = (result: MockResult) => {
-  const headers = new Headers(result.headers);
-
-  if (typeof result.data === "string") {
-    if (!headers.has("content-type")) {
-      headers.set("content-type", "text/plain;charset=utf-8");
-    }
-
-    return new Response(result.data, {
-      headers,
-      status: result.status,
-      statusText: result.statusText,
-    });
-  }
-
-  if (!headers.has("content-type")) {
-    headers.set("content-type", "application/json");
-  }
-
-  return new Response(JSON.stringify(result.data), {
-    headers,
-    status: result.status,
-    statusText: result.statusText,
-  });
-};
-
-const readResponsePayload = async (response: Response) => {
-  const text = await response.clone().text();
-
-  if (!text.trim()) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-};
-
-export const createMockFetch = (
-  testMode: TestMode,
-  { cookieHeader, mapRequest, originalFetch = fetch }: MockFetchOptions = {},
-): typeof fetch =>
-  async (input, init) => {
-    const request = mapRequest
-      ? await mapRequest(await createFetchRequest(input, init, cookieHeader))
-      : await createFetchRequest(input, init, cookieHeader);
-    const mock = await testMode.resolve(request);
-
-    if (mock) {
-      return responseFromMock(mock);
-    }
-
-    const response = await originalFetch(input, init);
-    const patched = await testMode.patch({
-      ...request,
-      data: await readResponsePayload(response),
-    });
-
-    if (patched === null) {
-      return response;
-    }
-
-    return responseFromMock({
-      data: patched,
-      status: response.status,
-      statusText: response.statusText,
-    });
-  };
-
-export const installMockFetch = (
-  testMode: TestMode,
-  { target = globalThis, ...options }: MockFetchOptions = {},
-) => {
-  const originalFetch = target.fetch.bind(target);
-
-  target.fetch = createMockFetch(testMode, {
-    ...options,
-    originalFetch,
-  });
-
-  return () => {
-    target.fetch = originalFetch;
+    delete documentRef.documentElement.dataset[datasetName];
+    if (documentRef.body) delete documentRef.body.dataset[datasetName];
   };
 };
