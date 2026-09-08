@@ -237,7 +237,7 @@ GitHub Actions는 PR과 main에서 Node.js 18.17 / 20 / 22 / 24 및 Chromium을 
 3. 해당 `vX.Y.Z` tag로 GitHub Release를 발행합니다.
 4. 전체 CI 통과, tag와 package 버전 일치, main에 포함된 커밋인지 확인 후 npm에 provenance와 함께 발행합니다.
 
-정식 버전은 `latest`, `1.2.0-beta.1` 같은 사전 버전은 `next`로 발행합니다. 수동 실행도 main에 포함된 기존 버전 tag가 필요합니다. 임의 브랜치 HEAD는 배포하지 않습니다.
+정식 버전은 `latest`, `1.2.0-beta.1` 같은 사전 버전은 `next`로 발행합니다. 수동 실행도 main에 포함된 기존 버전 tag가 필요합니다. 임의 브랜치 HEAD는 배포하지 않습니다. 재실행 시 동일 커밋의 발행 완료 버전은 건너뛰고, 레지스트리 확인은 반영 지연을 고려해 재시도합니다.
 
 최초 발행 후 토큰 없이 배포하려면 npm의 [Trusted publishing](https://docs.npmjs.com/trusted-publishers/)에 GitHub user `uiwwsw`, repository `test-mode`, workflow `publish.yml`, environment `npm`을 등록하고 직접 `npm publish`를 허용하세요. 워크플로에는 OIDC 권한이 준비되어 있습니다.
 
