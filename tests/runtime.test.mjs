@@ -141,3 +141,13 @@ test('a broad case replaces every conflicting method-specific case', () => {
   ] });
   assert.deepEqual(mode.set(['/items:get', '/items:post', '/items:all']), ['/items:all']);
 });
+
+test('successful registration refreshes subscribers and failed registration does not notify', () => {
+  const mode = runtime({ definitions: [feature()] });
+  let count = 0;
+  mode.subscribe(() => count++);
+  mode.register([defineMock('/new', () => ({}))]);
+  assert.equal(count, 1);
+  assert.throws(() => mode.register([feature()]), /Ambiguous/);
+  assert.equal(count, 1);
+});

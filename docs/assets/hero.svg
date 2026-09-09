@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+<title id="title">test mode — Your app. Every API state.</title>
+<desc id="desc">A TypeScript runtime for API mocks, response patches, and repeatable QA scenarios, with zero runtime dependencies.</desc>
+<defs>
+  <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M 28 0 L 0 0 0 28" fill="none" stroke="#dde5e6" stroke-width=".6"/></pattern>
+  <clipPath id="round"><rect width="1200" height="360" rx="20"/></clipPath>
+</defs>
+<g clip-path="url(#round)">
+<rect width="1200" height="360" fill="#f3f7f6"/>
+<rect x="632" width="568" height="360" fill="url(#grid)"/>
+<rect x="42" y="35" width="36" height="36" rx="10" fill="#123c36"/>
+<text x="60" y="62" text-anchor="middle" fill="#8df6cf" font-family="Georgia,serif" font-size="32">t</text>
+<text x="90" y="62" fill="#173c36" font-family="Arial,Helvetica,sans-serif" font-size="27" font-weight="800">test mode</text>
+<text x="43" y="129" fill="#648178" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700" letter-spacing="2">API SCENARIOS FOR DEVELOPMENT &amp; QA</text>
+<text x="40" y="190" fill="#142e2a" font-family="Arial,Helvetica,sans-serif" font-size="55" font-weight="800" letter-spacing="-2">Your app.</text>
+<text x="40" y="250" fill="#142e2a" font-family="Arial,Helvetica,sans-serif" font-size="55" font-weight="800" letter-spacing="-2">Every API state.</text>
+<text x="43" y="302" fill="#62766f" font-family="Arial,Helvetica,sans-serif" font-size="17">Real UI. Repeatable scenarios. No runtime dependencies.</text>
+<rect x="651" y="64" width="505" height="244" rx="14" fill="#102c28"/>
+<circle cx="677" cy="88" r="4" fill="#40645c"/><circle cx="692" cy="88" r="4" fill="#40645c"/><circle cx="707" cy="88" r="4" fill="#40645c"/>
+<text x="1132" y="93" text-anchor="end" fill="#9dbeb3" font-family="Arial,Helvetica,sans-serif" font-size="11" letter-spacing="1">BROWSER CONSOLE</text>
+<path d="M652 109h503" stroke="#2b4942"/>
+<text x="676" y="151" fill="#8df6cf" font-family="Menlo,Consolas,monospace" font-size="19">&gt; test.story('cart.empty')</text>
+<text x="676" y="187" fill="#a5c7bb" font-family="Menlo,Consolas,monospace" font-size="15">{ items: [], total: 0 }</text>
+<rect x="676" y="220" width="82" height="29" rx="14" fill="#8df6cf"/>
+<text x="717" y="239" text-anchor="middle" fill="#173c36" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="800">MOCK</text>
+<rect x="768" y="220" width="82" height="29" rx="14" fill="#274a40"/>
+<text x="809" y="239" text-anchor="middle" fill="#bcdbd0" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700">PATCH</text>
+<rect x="860" y="220" width="104" height="29" rx="14" fill="#274a40"/>
+<text x="912" y="239" text-anchor="middle" fill="#bcdbd0" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700">STORIES</text>
+<circle cx="680" cy="279" r="3" fill="#8df6cf"/>
+<text x="691" y="283" fill="#9ebcb1" font-family="Arial,Helvetica,sans-serif" font-size="12">Same screen. A different response.</text>
+</g>
+<rect x=".5" y=".5" width="1199" height="359" rx="20" fill="none" stroke="#dce6e0"/>
+</svg>
