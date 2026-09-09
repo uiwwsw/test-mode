@@ -1,0 +1,2 @@
+export const MOCK_RESULT = Symbol("TEST_MODE_MOCK_RESULT");
+export const MOCK_PASS_THROUGH = Symbol("TEST_MODE_PASS_THROUGH");

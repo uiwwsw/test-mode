@@ -1,6 +1,6 @@
 {
   "name": "@uiwwsw/test-mode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-neutral API scenario runtime for development and QA: fetch mocks, response patches, browser controls, and server adapters.",
   "type": "module",
   "packageManager": "npm@11.16.0",
@@ -20,6 +20,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./fetch": {
+      "types": "./dist/fetch.d.ts",
+      "import": "./dist/fetch.js"
     }
   },
   "main": "./dist/index.js",
@@ -35,16 +47,20 @@
     "prepack": "npm run build",
     "prepublishOnly": "npm run ci",
     "pack:dry-run": "npm pack --dry-run",
-    "release:check": "node scripts/check-release.mjs"
+    "release:check": "node scripts/check-release.mjs",
+    "dev:example": "npm run build && node scripts/serve-example.mjs",
+    "docs:assets": "npm run build && node scripts/render-doc-assets.mjs"
   },
   "keywords": [
-    "api",
-    "mock",
-    "story",
-    "scenario",
-    "test-mode",
+    "api-mocking",
     "fetch",
-    "overlay",
+    "mock",
+    "qa",
+    "scenario",
+    "typescript",
+    "testing",
+    "response-patching",
+    "test-mode",
     "vanilla"
   ],
   "engines": {

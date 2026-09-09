@@ -30,8 +30,8 @@ Mock and patch features are alternative behaviors for a matching path/method/cas
 
 | Area | Responsibility |
 | --- | --- |
-| `src/index.ts`: TestMode | Definitions, validation, route/case matching, active state, counters, stories, server integration |
-| `src/index.ts`: browser helpers | Console API, extensions, page-aware overlay, subscriptions, installation and cleanup |
+| `src/core.ts` | Definitions, validation, route/case matching, active state, counters, stories, server integration |
+| `src/browser.ts` | Console API, extensions, page-aware overlay, subscriptions, installation and cleanup |
 | `src/fetch.ts` | Request/Response adaptation, transport preservation, cancellation, fetch installation |
 | `templates/test-mode` | App-owned example definitions, environment configuration and bootstrap |
 | `tests` | Runtime and release regression tests using Node's test runner |
@@ -39,7 +39,7 @@ Mock and patch features are alternative behaviors for a matching path/method/cas
 | `scripts/check-package.mjs` | Tarball contents, independent install, public exports and consumer type validation |
 | `.github/workflows` | Repeatable verification and guarded npm publication |
 
-The runtime has no external dependencies and no import-time DOM or fetch mutation. Package exports remain a single ESM entry. Sources are shipped with source maps and declaration maps for debugging.
+The runtime has no external dependencies and no import-time DOM or fetch mutation. The root ESM entry remains compatible; `./core`, `./fetch` and `./browser` provide independent entry points. Shared contracts live in `src/types.ts`, with persistence, path normalization and lifecycle helpers in `src/internal/`. Importing core does not load browser rendering or console implementations. Sources are shipped with source maps and declaration maps for debugging.
 
 ## State and environment
 
@@ -61,7 +61,7 @@ Without a browser, an instance owns its active state in memory. For shared SSR/s
 - Selecting a story replaces active feature entries; adding a story preserves compatible entries. Story removal removes its referenced entries even if another story also references them.
 - `pages` controls discovery and overlay visibility, not whether an API is intercepted. A feature without pages is global; a story must have explicit or inherited pages.
 - Fetch cleanup restores the exact previous function and tolerates nested installs removed in either order. It does not overwrite a newer third-party hook.
-- Overlay cleanup removes the DOM, dataset markers, subscriptions and scheduled navigation refresh. Browser bootstrap should install one overlay/console per configured namespace and run its cleanup on teardown.
+- Overlay cleanup removes the DOM, dataset markers, subscriptions and scheduled navigation refresh. Nested overlay/console installations preserve owned globals, dataset markers and history methods when removed in either order. Setup failures unwind previously acquired resources, and all cleanup runs even if an extension teardown throws.
 
 ## Compatibility changes before the first registry release
 

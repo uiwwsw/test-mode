@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>test mode · API scenario playground</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #173c36;
+        --muted: #647970;
+        --line: #dce5de;
+        --mint: #c7f5dc;
+        --paper: #f3f7f3;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        font:
+          14px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: var(--ink);
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid #367966;
+        outline-offset: 4px;
+      }
+      main {
+        max-width: 1080px;
+        margin: auto;
+        padding: 32px 36px 28px;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 30px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.6px;
+      }
+      .mark {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: var(--ink);
+        color: #b9fbd6;
+        font: 24px Georgia;
+      }
+      .tag {
+        font:
+          11px ui-monospace,
+          monospace;
+        letter-spacing: 1px;
+        color: var(--muted);
+      }
+      .eyebrow {
+        font-size: 10px;
+        letter-spacing: 2px;
+        font-weight: 700;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      h1 {
+        font-size: 34px;
+        line-height: 1.2;
+        letter-spacing: -1.2px;
+        margin: 0 0 8px;
+      }
+      .intro {
+        color: var(--muted);
+        margin: 0 0 24px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .card-head {
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 22px;
+        border-bottom: 1px solid var(--line);
+      }
+      .card-head strong {
+        font-size: 12px;
+      }
+      .micro {
+        font-size: 10px;
+        letter-spacing: 0.8px;
+        color: var(--muted);
+      }
+      .cart {
+        padding: 26px 24px;
+        min-height: 276px;
+      }
+      .cart h2 {
+        margin: 0 0 22px;
+        letter-spacing: -0.6px;
+        font-size: 24px;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 0;
+        border-bottom: 1px solid #edf0ec;
+      }
+      .icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: #f0ecde;
+        color: #706241;
+        font-size: 24px;
+      }
+      .item:nth-child(3) .icon {
+        background: #deeae4;
+        color: #416d56;
+      }
+      .item-name {
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .item small {
+        color: var(--muted);
+      }
+      .price {
+        margin-left: auto;
+        font-weight: 650;
+      }
+      .total {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+        font-weight: 700;
+        font-size: 17px;
+      }
+      .empty,
+      .error {
+        text-align: center;
+        padding: 24px 0 8px;
+      }
+      .state-icon {
+        margin: 0 auto 14px;
+        width: 58px;
+        height: 58px;
+        background: #edf3ee;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 27px;
+      }
+      .empty h2,
+      .error h2 {
+        margin: 0 0 8px;
+        font-size: 21px;
+      }
+      .empty p,
+      .error p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .error .state-icon {
+        color: #ac5940;
+        background: #faeee6;
+      }
+      .discount {
+        color: #237755;
+        font-size: 12px;
+        display: block;
+        margin-top: 6px;
+      }
+      .controls {
+        margin-top: auto;
+        padding: 18px 20px 20px;
+        background: #eff4ef;
+        border-top: 1px solid var(--line);
+      }
+      .segments {
+        display: flex;
+        gap: 7px;
+        margin-bottom: 11px;
+      }
+      .segments button {
+        flex: 1;
+        border: 1px solid #d5e2d8;
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        padding: 8px 5px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .segments button[aria-pressed="true"] {
+        background: var(--ink);
+        color: #cbf7dc;
+        border-color: var(--ink);
+      }
+      #mode-description {
+        color: var(--muted);
+        font-size: 11px;
+        margin: 0;
+        min-height: 18px;
+      }
+      .terminal {
+        background: #112f28;
+        border-color: #112f28;
+        color: #d8ebdf;
+      }
+      .terminal .card-head {
+        border-color: #345047;
+      }
+      .terminal .micro {
+        color: #8bb49f;
+      }
+      .lights {
+        display: flex;
+        gap: 5px;
+      }
+      .lights i {
+        width: 6px;
+        height: 6px;
+        background: #527d67;
+        border-radius: 50%;
+      }
+      .code-area {
+        padding: 25px 23px;
+      }
+      .command {
+        font:
+          13px/1.8 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: #aaf0c8;
+        margin: 0 0 22px;
+        min-height: 47px;
+      }
+      .response-label {
+        display: flex;
+        justify-content: space-between;
+        color: #8caf9d;
+        font-size: 10px;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+      }
+      #payload {
+        font:
+          12px/1.7 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+        color: #d3e4d8;
+        margin: 0;
+        white-space: pre-wrap;
+        min-height: 182px;
+      }
+      .signal {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 13px 23px;
+        border-top: 1px solid #345047;
+        color: #9fc8b0;
+        font-size: 11px;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #91e3b1;
+      }
+      .bottom {
+        margin-top: 20px;
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .footer-link {
+        color: var(--muted);
+        text-decoration: none;
+        border-bottom: 1px solid #b9cbbd;
+      }
+      #status-badge {
+        font:
+          10px ui-monospace,
+          monospace;
+        background: #e8f4eb;
+        color: #437554;
+        padding: 3px 8px;
+        border-radius: 12px;
+      }
+      .terminal-status {
+        font:
+          10px ui-monospace,
+          monospace;
+        color: #a4cbb2;
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 22px 18px;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .top {
+          margin-bottom: 24px;
+        }
+        .tag {
+          font-size: 9px;
+        }
+        h1 {
+          font-size: 28px;
+        }
+        .bottom {
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="top">
+        <div class="brand"><span class="mark">t</span>test mode</div>
+        <span class="tag">API SCENARIO PLAYGROUND</span>
+      </header>
+      <p class="eyebrow">ONE SCREEN · FOUR STATES</p>
+      <h1>Make every state easy to reach.</h1>
+      <p class="intro">Switch API behavior. Keep your real interface.</p>
+      <div class="layout">
+        <section class="card" aria-label="Cart preview">
+          <div class="card-head">
+            <strong>Everyday store</strong
+            ><span id="status-badge">LIVE API</span>
+          </div>
+          <div id="cart" class="cart" aria-live="polite"></div>
+          <div class="controls">
+            <div class="segments" aria-label="Select an API scenario">
+              <button data-mode="real" aria-pressed="true">Real API</button
+              ><button data-mode="empty" aria-pressed="false">Empty</button
+              ><button data-mode="error" aria-pressed="false">Error</button
+              ><button data-mode="patch" aria-pressed="false">Patch</button>
+            </div>
+            <p id="mode-description">
+              No scenario selected. The request reaches the server.
+            </p>
+          </div>
+        </section>
+        <section class="card terminal" aria-label="Scenario console">
+          <div class="card-head">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <span class="micro">BROWSER CONSOLE</span>
+          </div>
+          <div class="code-area">
+            <pre id="command" class="command">
+&gt; test.clear()
+&gt; await fetch('/api/cart')</pre
+            >
+            <div class="response-label">
+              <span>RESPONSE</span
+              ><span id="http-status" class="terminal-status">200 OK</span>
+            </div>
+            <pre id="payload"></pre>
+          </div>
+          <div class="signal">
+            <span class="dot"></span
+            ><span id="transport"
+              >Original response · network request sent</span
+            >
+          </div>
+        </section>
+      </div>
+      <footer class="bottom">
+        <span>Powered by the actual @uiwwsw/test-mode runtime.</span
+        ><a class="footer-link" href="https://github.com/uiwwsw/test-mode"
+          >Source &amp; documentation ↗</a
+        >
+      </footer>
+    </main>
+    <script type="module">
+      import {
+        createTestMode,
+        defineMock,
+        definePatch,
+        defineStory,
+        entry,
+        httpResult,
+        installMockFetch,
+        installTestModeOverlay,
+      } from "/dist/index.js";
+      const runtime = createTestMode({
+        enabled: true,
+        storageKey: "test-mode.demo",
+        cookieKey: "test-mode.demo",
+        eventName: "test-mode.demo:change",
+        definitions: [
+          defineMock("/api/cart", () => ({ items: [], total: 0 }), {
+            caseKey: "empty",
+            pages: ["/"],
+          }),
+          defineMock(
+            "/api/cart",
+            () =>
+              httpResult({
+                data: { message: "The cart is temporarily unavailable." },
+                status: 503,
+                statusText: "Service Unavailable",
+              }),
+            { caseKey: "error", pages: ["/"] },
+          ),
+        ],
+        patchDefinitions: [
+          definePatch(
+            "/api/cart",
+            (data) => ({ ...data, discount: 10, total: data.total - 10 }),
+            { caseKey: "discount", pages: ["/"] },
+          ),
+        ],
+        stories: [
+          defineStory({
+            key: "cart.empty",
+            title: "Empty cart",
+            description: "A first visit, before any products are added.",
+            entries: [entry("/api/cart", "empty")],
+          }),
+          defineStory({
+            key: "cart.error",
+            title: "Server error",
+            description: "A recoverable service failure.",
+            entries: [entry("/api/cart", "error")],
+          }),
+          defineStory({
+            key: "cart.discount",
+            title: "Discount applied",
+            description: "Real products, with a patched discount.",
+            entries: [entry("/api/cart", "discount")],
+          }),
+        ],
+      });
+      runtime.clear();
+      const stopFetch = installMockFetch(runtime);
+      const stopOverlay = installTestModeOverlay(runtime, {
+        watermarkText: "TEST MODE",
+        namespace: "__testModeDemo",
+      });
+      const $ = (selector) => document.querySelector(selector);
+      const descriptions = {
+        real: [
+          "No scenario selected. The request reaches the server.",
+          "Original response · network request sent",
+          "LIVE API",
+        ],
+        empty: [
+          "A mock replaces the response before any network request.",
+          "Mock response · no network request",
+          "MOCK",
+        ],
+        error: [
+          "A mock returns HTTP 503 so you can check the error state.",
+          "Mock response · no network request",
+          "MOCK · 503",
+        ],
+        patch: [
+          "The real response is reused, then a discount is applied.",
+          "Patched response · real products preserved",
+          "PATCH",
+        ],
+      };
+      let sequence = 0;
+      async function select(mode) {
+        const current = ++sequence;
+        const key = {
+          empty: "cart.empty",
+          error: "cart.error",
+          patch: "cart.discount",
+        }[mode];
+        if (key) window.test.story(key);
+        else window.test.clear();
+        for (const button of document.querySelectorAll("[data-mode]"))
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.mode === mode),
+          );
+        $("#command").textContent =
+          `${key ? `> test.story('${key}')` : "> test.clear()"}\n> await fetch('/api/cart')`;
+        $("#mode-description").textContent = descriptions[mode][0];
+        $("#transport").textContent = descriptions[mode][1];
+        $("#status-badge").textContent = descriptions[mode][2];
+        const response = await fetch("/api/cart");
+        const data = await response.json();
+        if (current !== sequence) return;
+        $("#http-status").textContent =
+          `${response.status} ${response.statusText}`;
+        $("#payload").textContent = JSON.stringify(data, null, 2);
+        const cart = $("#cart");
+        cart.replaceChildren();
+        if (!response.ok || !data.items.length) {
+          cart.innerHTML = `<div class="${response.ok ? "empty" : "error"}"><div class="state-icon">${response.ok ? "＋" : "!"}</div><h2>${response.ok ? "Your cart is a blank canvas." : "A little pause in your plans."}</h2><p>${response.ok ? "Find something you’ll love." : "Your cart will be back. Try again soon."}</p></div>`;
+        } else {
+          const title = document.createElement("h2");
+          title.textContent = "Your everyday essentials";
+          cart.append(title);
+          for (const [index, item] of data.items.entries()) {
+            const row = document.createElement("div");
+            row.className = "item";
+            const icon = document.createElement("div");
+            icon.className = "icon";
+            icon.textContent = index ? "◡" : "▱";
+            const label = document.createElement("div");
+            label.className = "item-name";
+            label.textContent = item.name;
+            const detail = document.createElement("small");
+            detail.textContent = "One good choice";
+            label.append(document.createElement("br"), detail);
+            const price = document.createElement("span");
+            price.className = "price";
+            price.textContent = `$${item.price}.00`;
+            row.append(icon, label, price);
+            cart.append(row);
+          }
+          const total = document.createElement("div");
+          total.className = "total";
+          total.innerHTML = "<span>Total</span>";
+          const amount = document.createElement("span");
+          amount.textContent = `$${data.total}.00`;
+          total.append(amount);
+          cart.append(total);
+          if (data.discount) {
+            const note = document.createElement("span");
+            note.className = "discount";
+            note.textContent = `$${data.discount}.00 welcome discount applied`;
+            cart.append(note);
+          }
+        }
+        document.body.dataset.ready = mode;
+      }
+      for (const button of document.querySelectorAll("[data-mode]"))
+        button.addEventListener("click", () => select(button.dataset.mode));
+      window.addEventListener(
+        "pagehide",
+        () => {
+          stopOverlay();
+          stopFetch();
+        },
+        { once: true },
+      );
+      await select("real");
+    </script>
+  </body>
+</html>
